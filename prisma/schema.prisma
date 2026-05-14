@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum DogSize {
+  SMALL
+  MEDIUM
+  LARGE
+  XLARGE
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id                       String    @id @default(cuid())
+  name                     String    @unique
+  description              String?
+  durationMin              Int
+  bufferMin                Int       @default(15)
+  priceCents               Int
+  priceCoatShortMinCents   Int?
+  priceCoatShortMaxCents   Int?
+  priceCoatLongMinCents    Int?
+  priceCoatLongMaxCents    Int?
+  size                     DogSize?
+  forAnimal                String?   // 'DOG' | 'CAT'
+  active                   Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  bookings                 Booking[]
+
+  @@index([active])
+}
+
+// Weekly recurring opening hours (0=Sun..6=Sat)
+model OpeningHour {
+  id          String  @id @default(cuid())
+  dayOfWeek   Int
+  openMinute  Int     // minutes from 00:00 local time
+  closeMinute Int
+  active      Boolean @default(true)
+
+  @@index([dayOfWeek])
+}
+
+// Closures (holidays / one-off blocks)
+model Closure {
+  id        String   @id @default(cuid())
+  startsAt  DateTime
+  endsAt    DateTime
+  reason    String?
+
+  @@index([startsAt, endsAt])
+}
+
+model Extra {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  priceCents Int
+  dogOnly    Boolean  @default(false)
+  active     Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([active])
+}
+
+model Breed {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  animalType String   // 'DOG' | 'CAT'
+  size       DogSize?
+  coatType   String?  // 'SHORT' | 'LONG' | 'MIXED'
+  priceMin   Int
+  priceMax   Int
+  active     Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([animalType, active])
+  @@index([size])
+}
+
+model Booking {
+  id            String        @id @default(cuid())
+  serviceId     String
+  service       Service       @relation(fields: [serviceId], references: [id])
+  startsAt      DateTime
+  endsAt        DateTime
+  status        BookingStatus @default(CONFIRMED)
+  customerName  String
+  customerEmail String
+  customerPhone String
+  dogName       String
+  dogBreed      String?
+  dogSize       DogSize?
+  notes         String?
+  priceCents    Int
+  privacyConsent Boolean      @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Overlap protection handled by transactional check in createBookingAction.
+  // (Removed @@unique on [startsAt, status] to allow admin force-overlap.)
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([status])
+  @@index([customerEmail])
+}

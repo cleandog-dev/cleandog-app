@@ -1,0 +1,333 @@
+'use client';
+
+import { useState } from 'react';
+import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay } from 'date-fns';
+import { it } from 'date-fns/locale';
+import { toZonedTime } from 'date-fns-tz';
+import type { Booking, Service, BookingStatus } from '@prisma/client';
+import { Button } from '@/components/ui/button';
+import { APP_TIMEZONE, animalLabel } from '@/lib/utils';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookingDetailDialog } from './BookingDetailDialog';
+
+type Row = Booking & { service: Service };
+
+const statusColor: Record<BookingStatus, string> = {
+  CONFIRMED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  PENDING: 'bg-amber-100 text-amber-800 border-amber-200',
+  COMPLETED: 'bg-gray-100 text-gray-600 border-gray-200',
+  CANCELLED: 'bg-red-100 text-red-700 border-red-200 line-through opacity-60',
+  NO_SHOW: 'bg-red-100 text-red-700 border-red-200 opacity-60',
+};
+
+const statusLabel: Record<BookingStatus, string> = {
+  PENDING: 'Attesa',
+  CONFIRMED: 'Conferm.',
+  COMPLETED: 'Compl.',
+  CANCELLED: 'Annull.',
+  NO_SHOW: 'No-show',
+};
+
+// Opening hours for visual guide (minutes from midnight)
+const OPEN_FROM = 9 * 60;   // 09:00
+const OPEN_TO = 18 * 60;    // 18:00
+const HOUR_HEIGHT_PX = 44;  // px per hour
+const START_HOUR = 8;       // display from 08:00
+const END_HOUR = 19;        // display to 19:00
+const TOTAL_HOURS = END_HOUR - START_HOUR;
+
+function minuteToTop(totalMinutes: number): number {
+  const minutesFromStart = totalMinutes - START_HOUR * 60;
+  return (minutesFromStart / 60) * HOUR_HEIGHT_PX;
+}
+
+function durationToHeight(durationMin: number): number {
+  return (durationMin / 60) * HOUR_HEIGHT_PX;
+}
+
+function toLocalMinutes(d: Date): number {
+  const local = toZonedTime(d, APP_TIMEZONE);
+  return local.getHours() * 60 + local.getMinutes();
+}
+
+export function WeekCalendar({
+  bookings,
+  mobileView = 'list',
+}: {
+  bookings: Row[];
+  mobileView?: 'list' | 'grid';
+}) {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selected, setSelected] = useState<Row | null>(null);
+
+  const today = new Date();
+  const baseWeek = weekOffset === 0
+    ? today
+    : weekOffset > 0
+      ? addWeeks(today, weekOffset)
+      : subWeeks(today, Math.abs(weekOffset));
+
+  const weekStart = startOfWeek(baseWeek, { weekStartsOn: 1 }); // Mon
+  const days = Array.from({ length: 6 }, (_, i) => addDays(weekStart, i)); // Mon–Sat
+
+  const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
+
+  return (
+    <div className="space-y-2">
+      {/* Nav */}
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="outline" size="sm" onClick={() => setWeekOffset((w) => w - 1)} className="flex-shrink-0">
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex-1 min-w-0 text-center text-xs font-medium sm:text-sm">
+          <span className="block truncate sm:inline">
+            {format(weekStart, 'd MMM', { locale: it })} – {format(addDays(weekStart, 5), 'd MMM', { locale: it })}
+          </span>
+          {weekOffset === 0 && (
+            <span className="ml-1 inline-block rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground sm:ml-2 sm:px-2 sm:text-xs">
+              Oggi
+            </span>
+          )}
+        </div>
+        <div className="flex gap-1 flex-shrink-0">
+          {weekOffset !== 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setWeekOffset(0)}>
+              Oggi
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setWeekOffset((w) => w + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Day-by-day list (Settimana view) */}
+      <div className={`space-y-2 ${mobileView === 'list' ? 'block' : 'hidden'}`}>
+        {days.map((day) => {
+          const isToday = isSameDay(day, today);
+          const dayBookings = bookings
+            .filter((b) => isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day))
+            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+          return (
+            <div
+              key={day.toISOString()}
+              className={`rounded-lg border bg-white ${isToday ? 'ring-2 ring-primary' : ''}`}
+            >
+              <div className={`flex items-center justify-between px-3 py-2 border-b ${isToday ? 'bg-accent/30' : 'bg-muted/40'}`}>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-medium uppercase text-muted-foreground">
+                    {format(day, 'EEE', { locale: it })}
+                  </span>
+                  <span className="text-base font-bold">{format(day, 'd MMM', { locale: it })}</span>
+                  {isToday && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground">Oggi</span>}
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {dayBookings.length === 0 ? 'Libero' : `${dayBookings.length} app.`}
+                </span>
+              </div>
+              {dayBookings.length > 0 && (
+                <ul className="divide-y">
+                  {dayBookings.map((b) => (
+                    <li key={b.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(selected?.id === b.id ? null : b)}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/40 ${b.status === 'CANCELLED' || b.status === 'NO_SHOW' ? 'opacity-50 line-through' : ''}`}
+                      >
+                        <span className="font-mono text-xs font-semibold w-12">
+                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium">{animalLabel(b)}</span>
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            · {b.service.name.split('—')[0].trim()}
+                          </span>
+                        </span>
+                        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                          b.status === 'CONFIRMED' ? 'bg-emerald-500'
+                          : b.status === 'PENDING' ? 'bg-amber-500'
+                          : b.status === 'COMPLETED' ? 'bg-gray-400'
+                          : 'bg-red-400'
+                        }`} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Time-grid calendar (Calendario view) */}
+      <div className={`overflow-x-auto rounded-xl border bg-white shadow-sm ${mobileView === 'grid' ? 'block' : 'hidden'}`}>
+        <div className="min-w-[600px]">
+          {/* Day headers */}
+          <div className="grid border-b" style={{ gridTemplateColumns: '48px repeat(6, 1fr)' }}>
+            <div className="border-r py-1" />
+            {days.map((day) => {
+              const isToday = isSameDay(day, today);
+              const count = bookings.filter(
+                (b) =>
+                  isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
+                  ['CONFIRMED', 'PENDING'].includes(b.status),
+              ).length;
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`flex items-center justify-center gap-1.5 border-r py-1 text-center text-xs ${isToday ? 'bg-accent/40' : ''}`}
+                >
+                  <span className="font-medium uppercase text-muted-foreground">
+                    {format(day, 'EEE', { locale: it })}
+                  </span>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold ${
+                    isToday ? 'bg-primary text-primary-foreground' : ''
+                  }`}>
+                    {format(day, 'd')}
+                  </span>
+                  {count > 0 && (
+                    <span className="text-[10px] font-medium text-primary">
+                      ({count})
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Time grid */}
+          <div
+            className="relative grid"
+            style={{
+              gridTemplateColumns: '48px repeat(6, 1fr)',
+              height: `${TOTAL_HOURS * HOUR_HEIGHT_PX}px`,
+            }}
+          >
+            {/* Hour labels */}
+            <div className="relative border-r">
+              {hours.map((h) => (
+                <div
+                  key={h}
+                  className="absolute right-1 -translate-y-2 text-[10px] text-muted-foreground"
+                  style={{ top: `${(h - START_HOUR) * HOUR_HEIGHT_PX}px` }}
+                >
+                  {h}:00
+                </div>
+              ))}
+            </div>
+
+            {/* Day columns */}
+            {days.map((day, di) => {
+              const dayBookings = bookings.filter((b) =>
+                isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day),
+              );
+              const isToday = isSameDay(day, today);
+
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`relative border-r ${isToday ? 'bg-accent/10' : ''}`}
+                >
+                  {/* Hour lines */}
+                  {hours.map((h) => (
+                    <div
+                      key={h}
+                      className="absolute w-full border-t border-border/40"
+                      style={{ top: `${(h - START_HOUR) * HOUR_HEIGHT_PX}px` }}
+                    />
+                  ))}
+
+                  {/* Opening hours highlight */}
+                  <div
+                    className="absolute w-full bg-green-50/60"
+                    style={{
+                      top: `${minuteToTop(OPEN_FROM)}px`,
+                      height: `${durationToHeight(OPEN_TO - OPEN_FROM)}px`,
+                    }}
+                  />
+
+                  {/* Today line */}
+                  {isToday && (() => {
+                    const now = toZonedTime(new Date(), APP_TIMEZONE);
+                    const nowMin = now.getHours() * 60 + now.getMinutes();
+                    if (nowMin < START_HOUR * 60 || nowMin > END_HOUR * 60) return null;
+                    return (
+                      <div
+                        className="absolute z-10 w-full border-t-2 border-red-400"
+                        style={{ top: `${minuteToTop(nowMin)}px` }}
+                      >
+                        <div className="h-2 w-2 -translate-y-1 rounded-full bg-red-400" />
+                      </div>
+                    );
+                  })()}
+
+                  {/* Bookings */}
+                  {dayBookings.map((b) => {
+                    const startMin = toLocalMinutes(b.startsAt);
+                    const endMin = toLocalMinutes(b.endsAt);
+                    const top = minuteToTop(startMin);
+                    const height = Math.max(durationToHeight(endMin - startMin), 20);
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelected(selected?.id === b.id ? null : b)}
+                        className={`absolute left-0.5 right-0.5 overflow-hidden rounded border px-1 py-0.5 text-left text-[10px] transition-shadow hover:shadow-md ${statusColor[b.status]}`}
+                        style={{ top: `${top}px`, height: `${height}px` }}
+                      >
+                        <div className="font-semibold leading-tight">
+                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')} {animalLabel(b)}
+                        </div>
+                        {height > 30 && (
+                          <div className="truncate opacity-80">{b.service.name.split('—')[0]}</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <BookingDetailDialog booking={selected} onClose={() => setSelected(null)} />
+
+      {/* Legend — grid view */}
+      <div className={`flex-wrap gap-3 text-xs text-muted-foreground ${mobileView === 'grid' ? 'flex' : 'hidden'}`}>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded-sm bg-green-50 border border-green-200" />
+          Orario apertura
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded-sm bg-emerald-100 border border-emerald-200" />
+          Confermata
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded-sm bg-amber-100 border border-amber-200" />
+          In attesa
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded-sm bg-gray-100 border border-gray-200" />
+          Completata
+        </span>
+      </div>
+
+      {/* Legend — list view (dot colors) */}
+      <div className={`flex-wrap gap-3 text-xs text-muted-foreground ${mobileView === 'list' ? 'flex' : 'hidden'}`}>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> Confermata
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> In attesa
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> Completata
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full bg-red-400" /> Annullata
+        </span>
+      </div>
+    </div>
+  );
+}

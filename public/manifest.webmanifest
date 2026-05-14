@@ -1,0 +1,32 @@
+{
+  "name": "CleanDOG — Toelettatura cani e gatti",
+  "short_name": "CleanDOG",
+  "description": "Prenota online la toelettatura del tuo cane o gatto.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F4EF",
+  "theme_color": "#3D5A47",
+  "orientation": "portrait",
+  "lang": "it-IT",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-icon",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

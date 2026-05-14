@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npx prisma migrate deploy)",
+      "PowerShell(npx prisma migrate resolve --rolled-back 20260513160212_add_breed_model)",
+      "PowerShell(npx prisma generate)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "PowerShell($dll = 'node_modules\\\\.prisma\\\\client\\\\query_engine-windows.dll.node'; if \\(Test-Path $dll\\) { try { Rename-Item $dll \"$dll.old\" -ErrorAction Stop; Write-Host \"Renamed\" } catch { Write-Host \"Locked: $\\($_.Exception.Message\\)\" } } else { Write-Host \"No DLL\" }; npx prisma generate)",
+      "PowerShell($dt = Get-Date -Format \"yyyyMMddHHmmss\"; $dir = \"prisma\\\\migrations\\\\${dt}_add_grooming_prices\"; New-Item -ItemType Directory -Path $dir -Force | Out-Null; npx prisma migrate diff --from-schema-datasource prisma\\\\schema.prisma --to-schema-datamodel prisma\\\\schema.prisma --script | Out-File -FilePath \"$dir\\\\migration.sql\" -Encoding utf8; Write-Host \"Wrote $dir\")",
+      "PowerShell($dt = Get-Date -Format \"yyyyMMddHHmmss\"; $dir = \"prisma\\\\migrations\\\\${dt}_coat_pricing\"; New-Item -ItemType Directory -Path $dir -Force | Out-Null; npx prisma migrate diff --from-schema-datasource prisma\\\\schema.prisma --to-schema-datamodel prisma\\\\schema.prisma --script | Out-File -FilePath \"$dir\\\\migration.sql\" -Encoding utf8; Write-Host \"Wrote $dir\")",
+      "PowerShell($dt = Get-Date -Format \"yyyyMMddHHmmss\"; $dir = \"prisma\\\\migrations\\\\${dt}_add_extra_model\"; New-Item -ItemType Directory -Path $dir -Force | Out-Null; npx prisma migrate diff --from-schema-datasource prisma\\\\schema.prisma --to-schema-datamodel prisma\\\\schema.prisma --script | Out-File -FilePath \"$dir\\\\migration.sql\" -Encoding utf8; Write-Host \"Wrote $dir\")"
+    ]
+  }
+}
