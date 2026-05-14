@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Logo } from '@/components/Logo';
+import { InstallPWA } from '@/components/InstallPWA';
 
 export default function HomePage() {
   return (
@@ -160,6 +161,8 @@ export default function HomePage() {
           </div>
         </section>
       </main>
+
+      <InstallPWA />
 
       <footer className="border-t px-5 py-6 text-center text-xs" style={{ borderColor: 'var(--cream-300)', color: 'var(--ink-300)' }}>
         <p style={{ letterSpacing: '0.12em', textTransform: 'uppercase', fontSize: 10 }}>
