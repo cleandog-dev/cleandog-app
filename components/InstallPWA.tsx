@@ -27,15 +27,6 @@ export function InstallPWA() {
       return;
     }
 
-    // Show only on mobile/tablet (touch + small screen)
-    const isMobile =
-      window.matchMedia('(pointer: coarse)').matches &&
-      window.matchMedia('(max-width: 900px)').matches;
-    if (!isMobile) {
-      setDismissed(true);
-      return;
-    }
-
     // User-dismissed previously?
     if (localStorage.getItem(DISMISS_KEY) === '1') {
       setDismissed(true);
@@ -71,10 +62,10 @@ export function InstallPWA() {
   if (deferredPrompt) {
     return (
       <div className="fixed bottom-3 left-3 right-3 z-50 mx-auto max-w-md rounded-xl border bg-white p-3 shadow-lg flex items-center gap-3">
-        <div className="text-2xl">📱</div>
+        <div className="text-2xl">⤓</div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Installa CleanDOG</p>
-          <p className="text-xs text-muted-foreground">Aggiungila alla home del telefono</p>
+          <p className="text-xs text-muted-foreground">Accedi più veloce, senza passare dal browser</p>
         </div>
         <button
           className="rounded-md px-3 py-1.5 text-xs font-medium text-white"
