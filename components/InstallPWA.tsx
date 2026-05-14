@@ -27,6 +27,15 @@ export function InstallPWA() {
       return;
     }
 
+    // Show only on mobile/tablet (touch + small screen)
+    const isMobile =
+      window.matchMedia('(pointer: coarse)').matches &&
+      window.matchMedia('(max-width: 900px)').matches;
+    if (!isMobile) {
+      setDismissed(true);
+      return;
+    }
+
     // User-dismissed previously?
     if (localStorage.getItem(DISMISS_KEY) === '1') {
       setDismissed(true);
