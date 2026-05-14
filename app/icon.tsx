@@ -4,6 +4,7 @@ import path from 'path';
 
 export const size = { width: 512, height: 512 };
 export const contentType = 'image/png';
+export const dynamic = 'force-dynamic';
 
 export default async function Icon() {
   const logoData = await readFile(path.join(process.cwd(), 'public', 'logo.png'));
