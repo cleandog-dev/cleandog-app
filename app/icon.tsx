@@ -19,7 +19,8 @@ export default async function Icon() {
         style={{
           width: 512,
           height: 512,
-          background: '#3D5A47',
+          background: '#ffffff',
+          border: '20px solid #3D5A47',
           borderRadius: 115,
           display: 'flex',
           alignItems: 'center',
@@ -27,7 +28,7 @@ export default async function Icon() {
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={base64} width={340} height={340} style={{ objectFit: 'contain' }} alt="" />
+        <img src={base64} width={360} height={360} style={{ objectFit: 'contain' }} alt="" />
       </div>
     ),
     { width: 512, height: 512 },

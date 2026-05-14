@@ -18,7 +18,8 @@ export default async function AppleIcon() {
         style={{
           width: 180,
           height: 180,
-          background: '#3D5A47',
+          background: '#ffffff',
+          border: '7px solid #3D5A47',
           borderRadius: 40,
           display: 'flex',
           alignItems: 'center',
@@ -26,7 +27,7 @@ export default async function AppleIcon() {
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={base64} width={120} height={120} style={{ objectFit: 'contain' }} alt="" />
+        <img src={base64} width={130} height={130} style={{ objectFit: 'contain' }} alt="" />
       </div>
     ),
     { width: 180, height: 180 },
