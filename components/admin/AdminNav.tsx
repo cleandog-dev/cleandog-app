@@ -9,6 +9,7 @@ export const NAV_ITEMS: Array<[string, string]> = [
   ['/admin/services', 'Servizi'],
   ['/admin/breeds', 'Razze'],
   ['/admin/extras', 'Extra'],
+  ['/admin/hours', 'Orari'],
   ['/admin/closures', 'Chiusure'],
   ['/admin/export', 'Export'],
 ];
