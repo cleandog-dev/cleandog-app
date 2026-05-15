@@ -421,69 +421,29 @@ export function ServiceStep({
         <div
           style={{
             borderRadius: 'var(--r-md)',
-            padding: '14px 16px',
-            background: 'var(--sage-50)',
-            border: '1.5px solid var(--sage-200)',
-            boxShadow: '0 2px 8px rgba(61, 90, 71, 0.08)',
+            padding: '12px 14px 12px 16px',
+            background: 'white',
+            borderLeft: '3px solid var(--sage-800)',
+            border: '1px solid var(--cream-300)',
+            borderLeftWidth: 3,
+            borderLeftColor: 'var(--sage-800)',
           }}
         >
           <p
             style={{
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 700,
-              letterSpacing: '0.08em',
+              letterSpacing: '0.1em',
               textTransform: 'uppercase',
               color: 'var(--sage-800)',
-              marginBottom: 10,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
+              marginBottom: 4,
             }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                background: 'var(--sage-800)',
-                color: 'white',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              ✓
-            </span>
-            Sempre incluso nel prezzo
+            ✓ Sempre incluso
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            {[
-              { emoji: '👂', label: 'Pulizia orecchie' },
-              { emoji: '💧', label: 'Sacche anali' },
-              { emoji: '✂️', label: 'Unghie' },
-            ].map((item) => (
-              <div
-                key={item.label}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  textAlign: 'center',
-                  padding: '8px 4px',
-                  background: 'white',
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--sage-100)',
-                }}
-              >
-                <span style={{ fontSize: 22, lineHeight: 1, marginBottom: 4 }}>{item.emoji}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-700)', lineHeight: 1.2 }}>
-                  {item.label}
-                </span>
-              </div>
-            ))}
-          </div>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+            Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
+          </p>
         </div>
       )}
 
