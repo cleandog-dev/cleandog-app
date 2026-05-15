@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { setSlotStepMinAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
@@ -9,7 +8,9 @@ import { useToast } from '@/hooks/use-toast';
 const OPTIONS = [10, 15, 20, 30, 45, 60];
 
 export function SlotStepCard({ initial }: { initial: number }) {
+  const [open, setOpen] = useState(false);
   const [value, setValue] = useState<number>(initial);
+  const [savedValue, setSavedValue] = useState<number>(initial);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -20,16 +21,29 @@ export function SlotStepCard({ initial }: { initial: number }) {
         toast({ title: 'Errore', description: r.error, variant: 'destructive' });
       } else {
         toast({ title: 'Intervallo aggiornato' });
+        setSavedValue(value);
+        setOpen(false);
       }
     });
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Intervallo slot</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      className="rounded-lg border bg-white"
+    >
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-sm list-none select-none">
+        <span className="flex items-center gap-2">
+          <span className="text-muted-foreground">⚙️</span>
+          <span>Intervallo slot</span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+            {savedValue} min
+          </span>
+        </span>
+        <span className="text-muted-foreground text-xs">{open ? '▴' : '▾'}</span>
+      </summary>
+      <div className="border-t px-4 py-3">
         <p className="text-xs text-muted-foreground mb-3">
           Frequenza con cui mostrare gli orari disponibili al cliente (es. ogni 15 min → 09:00, 09:15, 09:30…).
         </p>
@@ -51,11 +65,11 @@ export function SlotStepCard({ initial }: { initial: number }) {
               </button>
             ))}
           </div>
-          <Button onClick={save} disabled={pending || value === initial} size="sm" className="ml-auto">
+          <Button onClick={save} disabled={pending || value === savedValue} size="sm" className="ml-auto">
             {pending ? 'Salvo…' : 'Salva'}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }
