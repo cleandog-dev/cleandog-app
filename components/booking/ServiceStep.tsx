@@ -418,9 +418,72 @@ export function ServiceStep({
 
       {/* ── Sempre incluso ── */}
       {animal && serviceId && (
-        <div style={{ borderRadius: 'var(--r-md)', padding: '14px 16px', background: 'var(--cream-200)', fontSize: 13, color: 'var(--ink-600)', lineHeight: 1.7 }}>
-          <p style={{ fontWeight: 700, color: 'var(--ink-800)', marginBottom: 4 }}>✓ Sempre incluso</p>
-          Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
+        <div
+          style={{
+            borderRadius: 'var(--r-md)',
+            padding: '14px 16px',
+            background: 'var(--sage-50)',
+            border: '1.5px solid var(--sage-200)',
+            boxShadow: '0 2px 8px rgba(61, 90, 71, 0.08)',
+          }}
+        >
+          <p
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'var(--sage-800)',
+              marginBottom: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: 'var(--sage-800)',
+                color: 'white',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              ✓
+            </span>
+            Sempre incluso nel prezzo
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {[
+              { emoji: '👂', label: 'Pulizia orecchie' },
+              { emoji: '💧', label: 'Sacche anali' },
+              { emoji: '✂️', label: 'Unghie' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  textAlign: 'center',
+                  padding: '8px 4px',
+                  background: 'white',
+                  borderRadius: 'var(--r-sm)',
+                  border: '1px solid var(--sage-100)',
+                }}
+              >
+                <span style={{ fontSize: 22, lineHeight: 1, marginBottom: 4 }}>{item.emoji}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-700)', lineHeight: 1.2 }}>
+                  {item.label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
