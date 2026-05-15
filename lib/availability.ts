@@ -2,13 +2,12 @@ import { prisma } from '@/lib/db';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { addMinutes, format, startOfDay, endOfDay } from 'date-fns';
 import { APP_TIMEZONE } from '@/lib/utils';
+import { getSlotStepMin } from '@/lib/settings';
 
 export interface Slot {
   startISO: string; // UTC ISO
   label: string;    // HH:mm in Europe/Rome
 }
-
-const SLOT_STEP_MIN = 30;
 
 /**
  * Compute available slots for a service on a given local date.
@@ -70,6 +69,7 @@ export async function getAvailableSlots(params: {
   });
 
   const now = new Date();
+  const SLOT_STEP_MIN = await getSlotStepMin();
   const slots: Slot[] = [];
 
   for (const opening of openings) {

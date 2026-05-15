@@ -1,11 +1,16 @@
 import { prisma } from '@/lib/db';
 import { OpeningHoursManager } from '@/components/admin/OpeningHoursManager';
+import { SlotStepCard } from '@/components/admin/SlotStepCard';
+import { getSlotStepMin } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Orari' };
 
 export default async function AdminHoursPage() {
-  const rows = await prisma.openingHour.findMany();
+  const [rows, slotStep] = await Promise.all([
+    prisma.openingHour.findMany(),
+    getSlotStepMin(),
+  ]);
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
@@ -14,6 +19,7 @@ export default async function AdminHoursPage() {
           Imposta gli orari settimanali. Influisce sugli slot disponibili in fase di prenotazione.
         </p>
       </div>
+      <SlotStepCard initial={slotStep} />
       <OpeningHoursManager rows={rows} />
     </div>
   );

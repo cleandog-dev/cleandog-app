@@ -20,6 +20,7 @@ import { sendBookingConfirmation } from '@/lib/email';
 import { auth } from '@/lib/auth';
 import { findBreedByName, getCatBreed } from '@/lib/breeds-server';
 import { parseExtraNamesFromNotes } from '@/lib/utils';
+import { getSlotStepMin } from '@/lib/settings';
 
 export type ActionResult<T = unknown> =
   | { ok: true; data: T }
@@ -460,7 +461,7 @@ export async function getDayOverviewAction({
     }),
   ]);
 
-  const SLOT_STEP = 30;
+  const SLOT_STEP = await getSlotStepMin();
   const START_H = 8;
   const END_H = 20;
   const dur = service.durationMin;
@@ -725,6 +726,22 @@ export async function saveOpeningHoursAction(raw: unknown): Promise<ActionResult
       })),
     }),
   ]);
+  revalidatePath('/admin/hours');
+  revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Admin: save slot step (minutes) ────────────────────────────
+export async function setSlotStepMinAction(min: number): Promise<ActionResult> {
+  await requireAdmin();
+  if (!Number.isInteger(min) || min < 5 || min > 120) {
+    return { ok: false, error: 'Valore non valido (5-120 min)' };
+  }
+  await prisma.setting.upsert({
+    where: { key: 'slot_step_min' },
+    create: { key: 'slot_step_min', value: String(min) },
+    update: { value: String(min) },
+  });
   revalidatePath('/admin/hours');
   revalidatePath('/prenota');
   return { ok: true, data: null };

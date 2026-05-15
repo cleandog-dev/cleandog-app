@@ -58,6 +58,12 @@ model Service {
   @@index([active])
 }
 
+// Generic key/value settings (slot_step_min, etc.)
+model Setting {
+  key   String @id
+  value String
+}
+
 // Weekly recurring opening hours (0=Sun..6=Sat)
 model OpeningHour {
   id          String  @id @default(cuid())
