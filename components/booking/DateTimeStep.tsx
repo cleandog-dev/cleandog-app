@@ -15,8 +15,12 @@ function buildDateOptions(days = 21): Date[] {
   });
 }
 
-export function DateTimeStep({ serviceId, selectedISO, onBack, onSelect }: {
+export function DateTimeStep({ serviceId, addonServiceIds, breedName, sizeOptionId, coatChoice, selectedISO, onBack, onSelect }: {
   serviceId: string;
+  addonServiceIds?: string[];
+  breedName?: string | null;
+  sizeOptionId?: string | null;
+  coatChoice?: 'SHORT' | 'LONG' | null;
   selectedISO: string | null;
   onBack: () => void;
   onSelect: (iso: string) => void;
@@ -27,17 +31,24 @@ export function DateTimeStep({ serviceId, selectedISO, onBack, onSelect }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const addonsParam = (addonServiceIds ?? []).join(',');
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/availability?serviceId=${encodeURIComponent(serviceId)}&date=${selectedDate}`)
+    const params = new URLSearchParams({ serviceId, date: selectedDate });
+    if (addonsParam) params.set('addonServiceIds', addonsParam);
+    if (breedName) params.set('breedName', breedName);
+    if (sizeOptionId) params.set('sizeOptionId', sizeOptionId);
+    if (coatChoice) params.set('coatChoice', coatChoice);
+    fetch(`/api/availability?${params.toString()}`)
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((d: { slots: Slot[] }) => { if (!cancelled) setSlots(d.slots); })
       .catch(() => { if (!cancelled) setError('Impossibile caricare gli orari'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [serviceId, selectedDate]);
+  }, [serviceId, addonsParam, selectedDate, breedName, sizeOptionId, coatChoice]);
 
   return (
     <div className="space-y-6">

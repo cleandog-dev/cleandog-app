@@ -6,7 +6,6 @@ import { z } from 'zod';
 
 const FormSchema = z.object({
   customerName: z.string().min(2, 'Nome troppo corto').max(80),
-  customerEmail: z.string().email('Email non valida'),
   customerPhone: z.string().regex(/^(\+?[0-9\s\-().]{6,20})$/, 'Telefono non valido'),
   dogName: z.string().max(50).optional().or(z.literal('')),
   notes: z.string().max(500).optional().or(z.literal('')),
@@ -38,7 +37,7 @@ export function CustomerStep({
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      customerName: '', customerEmail: '', customerPhone: '',
+      customerName: '', customerPhone: '',
       dogName: '', notes: '', privacyConsent: undefined as unknown as true,
     },
   });
@@ -52,10 +51,6 @@ export function CustomerStep({
 
       <Field label="Telefono" error={errors.customerPhone?.message}>
         <input className="input-cd" {...form.register('customerPhone')} autoComplete="tel" placeholder="+39 333 123 4567" inputMode="tel" />
-      </Field>
-
-      <Field label="Email" error={errors.customerEmail?.message}>
-        <input className="input-cd" type="email" {...form.register('customerEmail')} autoComplete="email" placeholder="mario@email.com" inputMode="email" />
       </Field>
 
       <div style={{ height: 1, background: 'var(--cream-300)', margin: '20px 0' }} />

@@ -1,11 +1,14 @@
-import { getAllBreedsAdmin } from '@/lib/breeds-server';
+import { getAllBreedsAdmin, getBreedsMissingPrices } from '@/lib/breeds-server';
 import { BreedsManager } from '@/components/admin/BreedsManager';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Razze' };
 
 export default async function AdminBreedsPage() {
-  const breeds = await getAllBreedsAdmin();
+  const [breeds, missingByBreed] = await Promise.all([
+    getAllBreedsAdmin(),
+    getBreedsMissingPrices(),
+  ]);
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
@@ -14,7 +17,7 @@ export default async function AdminBreedsPage() {
           Gestisci le razze proposte ai clienti e i prezzi di lavaggio.
         </p>
       </div>
-      <BreedsManager breeds={breeds} />
+      <BreedsManager breeds={breeds} missingByBreed={missingByBreed} />
     </div>
   );
 }

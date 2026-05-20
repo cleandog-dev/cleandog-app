@@ -126,8 +126,6 @@ export function BookingsTable({
                       <td className="px-3 py-3">
                         <div className="font-medium">{b.customerName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {b.customerEmail}
-                          <br />
                           {b.customerPhone}
                         </div>
                       </td>

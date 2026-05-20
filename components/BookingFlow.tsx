@@ -7,7 +7,8 @@ import { DateTimeStep } from '@/components/booking/DateTimeStep';
 import { CustomerStep } from '@/components/booking/CustomerStep';
 import { createBookingAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import { formatPrice, type BreedEntry } from '@/lib/breeds';
+import type { BreedEntry, PricesByAnimal } from '@/lib/breeds';
+import { PushSubscribe } from '@/components/PushSubscribe';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -16,6 +17,7 @@ type BookingMeta = {
   serviceName: string;
   durationMin: number;
   dogName: string;
+  customerPhone: string;
 };
 
 // ── Calendar helpers ───────────────────────────────────────
@@ -80,13 +82,15 @@ function downloadIcal(meta: BookingMeta) {
 export function BookingFlow({
   services,
   dogBreeds,
-  catPrice,
+  catBreeds,
   extrasList,
+  pricesByAnimal,
 }: {
   services: Service[];
   dogBreeds: BreedEntry[];
-  catPrice: { min: number; max: number } | null;
+  catBreeds: BreedEntry[];
   extrasList: Extra[];
+  pricesByAnimal: PricesByAnimal;
 }) {
   const [step, setStep] = useState<Step>(1);
   const [selection, setSelection] = useState<ServiceSelection | null>(null);
@@ -103,7 +107,6 @@ export function BookingFlow({
 
   function submit(form: {
     customerName: string;
-    customerEmail: string;
     customerPhone: string;
     dogName?: string;
     notes?: string;
@@ -117,6 +120,8 @@ export function BookingFlow({
         ...form,
         notes: combinedNotes,
         serviceId: selection.serviceId,
+        addonServiceIds: selection.addonServiceIds ?? [],
+        sizeOptionId: selection.sizeOptionId,
         startsAt: slotISO,
         animalType: selection.animalType,
         dogBreed: selection.breed,
@@ -132,6 +137,7 @@ export function BookingFlow({
         serviceName: selection.serviceName.replace(/ — (Cane|Gatto)$/, ''),
         durationMin: selection.durationMin,
         dogName: form.dogName || selection.breed || 'animale',
+        customerPhone: form.customerPhone,
       });
       setStep(4);
     });
@@ -168,14 +174,24 @@ export function BookingFlow({
           <ServiceStep
             services={services}
             dogBreeds={dogBreeds}
-            catPrice={catPrice}
+            catBreeds={catBreeds}
             extrasList={extrasList}
+            pricesByAnimal={pricesByAnimal}
             initial={selection ?? undefined}
             onSelect={(s) => { setSelection(s); setSlotISO(null); setStep(2); }}
           />
         )}
         {step === 2 && selection && (
-          <DateTimeStep serviceId={selection.serviceId} selectedISO={slotISO} onBack={() => setStep(1)} onSelect={(iso) => { setSlotISO(iso); setStep(3); }} />
+          <DateTimeStep
+            serviceId={selection.serviceId}
+            addonServiceIds={selection.addonServiceIds}
+            breedName={selection.breed || null}
+            sizeOptionId={selection.sizeOptionId ?? null}
+            coatChoice={selection.coatChoice ?? null}
+            selectedISO={slotISO}
+            onBack={() => setStep(1)}
+            onSelect={(iso) => { setSlotISO(iso); setStep(3); }}
+          />
         )}
         {step === 3 && selection && slotISO && (
           <CustomerStep animalLabel={selection.animalType === 'CAT' ? 'gatto' : 'cane'} isSubmitting={isPending} onBack={() => setStep(2)} onSubmit={submit} />
@@ -218,9 +234,20 @@ function SuccessStep({ confirmedId, meta, onReset }: {
           Prenotazione confermata!
         </h2>
         <p className="mt-2 text-sm" style={{ color: 'var(--ink-500)' }}>
-          Riceverai una mail di conferma a breve.
+          Ti aspettiamo.
         </p>
       </div>
+
+      {/* Push subscribe for client (linked to phone) */}
+      {meta?.customerPhone && (
+        <div className="w-full">
+          <PushSubscribe
+            scope="CLIENT"
+            customerPhone={meta.customerPhone}
+            label="Ricevi promemoria 1h prima"
+          />
+        </div>
+      )}
 
       {/* Aggiungi al calendario */}
       {meta && (

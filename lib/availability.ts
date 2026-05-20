@@ -18,14 +18,55 @@ export interface Slot {
  */
 export async function getAvailableSlots(params: {
   serviceId: string;
+  addonServiceIds?: string[];
   date: string; // YYYY-MM-DD (local Rome date)
+  breedName?: string | null;
+  sizeOptionId?: string | null;
+  coatChoice?: 'SHORT' | 'LONG' | null;
 }): Promise<Slot[]> {
   const service = await prisma.service.findUnique({
     where: { id: params.serviceId },
   });
   if (!service || !service.active) return [];
 
-  const totalMin = service.durationMin;
+  const addonIds = Array.from(new Set(params.addonServiceIds ?? [])).filter(Boolean);
+  const addonServices = addonIds.length
+    ? await prisma.service.findMany({ where: { id: { in: addonIds }, active: true } })
+    : [];
+
+  // Resolve per-cell duration override (BreedServicePrice.durationMin) when breed is known.
+  const allServiceIds = [service.id, ...addonServices.map((a) => a.id)];
+  let breed: { id: string } | null = null;
+  if (params.breedName) {
+    breed = await prisma.breed.findUnique({
+      where: { name: params.breedName },
+      select: { id: true },
+    });
+  }
+  const cells = breed
+    ? await prisma.breedServicePrice.findMany({
+        where: { breedId: breed.id, serviceId: { in: allServiceIds }, active: true },
+        select: { serviceId: true, sizeOptionId: true, coat: true, durationMin: true },
+      })
+    : [];
+  const pickDuration = (svc: { id: string; durationMin: number; pricingMode: string }): number => {
+    if (svc.pricingMode !== 'PER_BREED' || !breed) return svc.durationMin;
+    const candidates = cells.filter((c) => c.serviceId === svc.id && c.durationMin != null && c.durationMin > 0);
+    if (candidates.length === 0) return svc.durationMin;
+    const wantSize = params.sizeOptionId ?? null;
+    const wantCoat = params.coatChoice ?? null;
+    const score = (r: typeof candidates[number]): number => {
+      let s = 0;
+      if (r.sizeOptionId && r.sizeOptionId === wantSize) s += 4;
+      else if (r.sizeOptionId == null && wantSize == null) s += 1;
+      if (r.coat && r.coat === wantCoat) s += 2;
+      else if (r.coat == null && wantCoat == null) s += 0.5;
+      return s;
+    };
+    return candidates.slice().sort((a, b) => score(b) - score(a))[0]?.durationMin ?? svc.durationMin;
+  };
+
+  const totalMin = pickDuration(service) + addonServices.reduce((s, a) => s + pickDuration(a), 0);
 
   // Build local-date range
   const [yStr, mStr, dStr] = params.date.split('-');

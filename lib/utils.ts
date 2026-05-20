@@ -38,7 +38,7 @@ export function parseExtraNamesFromNotes(notes: string | null | undefined): stri
   for (const seg of notes.split(' · ')) {
     const m = seg.match(/^\s*Extra:\s*(.+)$/);
     if (m) {
-      return m[1].split(',').map((s) => s.trim()).filter(Boolean);
+      return (m[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     }
   }
   return [];

@@ -15,12 +15,26 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const parsed = SlotQuerySchema.safeParse({
     serviceId: url.searchParams.get('serviceId'),
+    addonServiceIds: url.searchParams.get('addonServiceIds') ?? undefined,
     date: url.searchParams.get('date'),
+    breedName: url.searchParams.get('breedName') ?? undefined,
+    sizeOptionId: url.searchParams.get('sizeOptionId') ?? undefined,
+    coatChoice: url.searchParams.get('coatChoice') ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid query' }, { status: 400 });
   }
 
-  const slots = await getAvailableSlots(parsed.data);
+  const addonIds = parsed.data.addonServiceIds
+    ? parsed.data.addonServiceIds.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const slots = await getAvailableSlots({
+    serviceId: parsed.data.serviceId,
+    addonServiceIds: addonIds,
+    date: parsed.data.date,
+    breedName: parsed.data.breedName ?? null,
+    sizeOptionId: parsed.data.sizeOptionId ?? null,
+    coatChoice: parsed.data.coatChoice ?? null,
+  });
   return NextResponse.json({ slots });
 }

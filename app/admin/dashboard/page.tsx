@@ -3,7 +3,6 @@ import { BookingsTable } from '@/components/admin/BookingsTable';
 import { WeekCalendar } from '@/components/admin/WeekCalendar';
 import { NewBookingDialog } from '@/components/admin/NewBookingDialog';
 import { AutoRefresh } from '@/components/admin/AutoRefresh';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getAllBreedsAdmin } from '@/lib/breeds-server';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +57,7 @@ export default async function AdminDashboardPage({
         status: { in: ['PENDING', 'CONFIRMED'] },
       },
     }),
-    prisma.service.findMany({ orderBy: { name: 'asc' } }),
+    prisma.service.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
     getAllBreedsAdmin(),
   ]);
 

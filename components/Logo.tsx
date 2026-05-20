@@ -11,10 +11,18 @@ export function Logo({
   href?: string | null;
 }) {
   const inner = (
-    <span className="inline-flex items-center gap-2">
-      <Image src="/logo.png" alt="CleanDOG" width={size} height={size} priority className="rounded-full" />
+    <span className="inline-flex items-center gap-2" style={{ lineHeight: 1 }}>
+      <Image
+        src="/logo.png"
+        alt="CleanDOG"
+        width={size}
+        height={size}
+        priority
+        className="rounded-full"
+        style={{ display: 'block', flexShrink: 0 }}
+      />
       {showText && (
-        <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em' }}>
+        <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1, display: 'inline-flex', alignItems: 'baseline' }}>
           <span style={{ color: 'var(--sage-800)' }}>Clean</span>
           <span style={{ color: 'var(--brown-700)', fontFamily: "'Cormorant Garamond', serif", fontStyle: 'italic', fontWeight: 500 }}>Dog</span>
         </span>
@@ -23,5 +31,9 @@ export function Logo({
   );
 
   if (!href) return inner;
-  return <Link href={href}>{inner}</Link>;
+  return (
+    <Link href={href} className="inline-flex items-center" style={{ lineHeight: 1 }}>
+      {inner}
+    </Link>
+  );
 }

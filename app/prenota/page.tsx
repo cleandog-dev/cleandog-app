@@ -2,25 +2,27 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { BookingFlow } from '@/components/BookingFlow';
 import { Logo } from '@/components/Logo';
-import { getDogBreeds, getCatBreed } from '@/lib/breeds-server';
+import { getDogBreeds, getCatBreeds, getPricesMapForAnimal } from '@/lib/breeds-server';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Prenota' };
 
 export default async function PrenotaPage() {
-  const [services, dogBreeds, catBreed, extrasList] = await Promise.all([
+  const [services, dogBreeds, catBreeds, extrasList, dogPrices, catPrices] = await Promise.all([
     prisma.service.findMany({
-      where: { active: true },
-      orderBy: [{ name: 'asc' }],
+      where: { active: true, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     }),
     getDogBreeds(),
-    getCatBreed(),
+    getCatBreeds(),
     prisma.extra.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     }),
+    getPricesMapForAnimal('DOG'),
+    getPricesMapForAnimal('CAT'),
   ]);
-  const catPrice = catBreed ? { min: catBreed.priceMin, max: catBreed.priceMax } : null;
+  const pricesByAnimal = { DOG: dogPrices, CAT: catPrices };
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--cream-100)' }}>
@@ -47,7 +49,7 @@ export default async function PrenotaPage() {
         <p className="mb-8 text-sm" style={{ color: 'var(--ink-500)' }}>
           Scegli servizio, data e lascia i tuoi dati.
         </p>
-        <BookingFlow services={services} dogBreeds={dogBreeds} catPrice={catPrice} extrasList={extrasList} />
+        <BookingFlow services={services} dogBreeds={dogBreeds} catBreeds={catBreeds} extrasList={extrasList} pricesByAnimal={pricesByAnimal} />
       </main>
     </div>
   );

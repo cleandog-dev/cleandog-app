@@ -2,8 +2,130 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Logo } from '@/components/Logo';
 import { InstallPWA } from '@/components/InstallPWA';
+import { getDogBreeds, getCatBreeds, getPricesMapForAnimal } from '@/lib/breeds-server';
+import { prisma } from '@/lib/db';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const [dogBreeds, catBreeds, services, dogPrices, catPrices] = await Promise.all([
+    getDogBreeds(),
+    getCatBreeds(),
+    prisma.service.findMany({ where: { active: true, deletedAt: null } }),
+    getPricesMapForAnimal('DOG'),
+    getPricesMapForAnimal('CAT'),
+  ]);
+
+  // Compute min cents across breeds for a given service id (any size/coat cell).
+  const minCentsForService = (
+    payload: { pricesByBreed: Record<string, Record<string, Record<string, { priceCents: number | null; active: boolean }>>> },
+    serviceId: string,
+  ): number => {
+    let m = Infinity;
+    for (const breedId in payload.pricesByBreed) {
+      const svcCells = payload.pricesByBreed[breedId]?.[serviceId];
+      if (!svcCells) continue;
+      for (const key in svcCells) {
+        const r = svcCells[key];
+        if (!r || !r.active || r.priceCents == null || r.priceCents <= 0) continue;
+        if (r.priceCents < m) m = r.priceCents;
+      }
+    }
+    return m === Infinity ? 0 : Math.round(m / 100);
+  };
+
+  void dogBreeds; void catBreeds;
+
+  type Card = {
+    emoji: string;
+    name: string;
+    desc: string;
+    price: number;
+    min: number | null;
+    popular?: boolean;
+  };
+
+  // Pick emoji from service name keyword (fallback ⭐).
+  const emojiFor = (s: { name: string; displayName: string | null }): string => {
+    const n = `${s.displayName ?? ''} ${s.name}`.toLowerCase();
+    if (/bagno/.test(n)) return '🛁';
+    if (/tosatur/.test(n)) return '✂️';
+    if (/spuntat|mantenim/.test(n)) return '💈';
+    if (/asilo|parking/.test(n)) return '🏠';
+    return '⭐';
+  };
+  const labelOf = (s: { name: string; displayName: string | null }): string =>
+    (s.displayName?.trim() || s.name.replace(/ — (Cane|Gatto)$/, ''));
+
+  const sumMin = (
+    payload: { pricesByBreed: Record<string, Record<string, Record<string, { priceCents: number | null; active: boolean }>>> },
+    ids: string[],
+  ): number => {
+    let total = 0;
+    for (const id of ids) {
+      const v = minCentsForService(payload, id);
+      if (v <= 0) return 0;
+      total += v;
+    }
+    return total;
+  };
+
+  const cardsForAnimal = (
+    animal: 'DOG' | 'CAT',
+    payload: { pricesByBreed: Record<string, Record<string, Record<string, { priceCents: number | null; active: boolean }>>> },
+  ): Card[] => {
+    const list = services
+      .filter((s) => s.forAnimal === animal)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    const primary = list.find((s) => s.isDefault) ?? null;
+    const addons = list.filter((s) => !s.isDefault);
+    const out: Card[] = [];
+    if (primary) {
+      out.push({
+        emoji: emojiFor(primary),
+        name: labelOf(primary),
+        desc: primary.description || (animal === 'CAT' ? 'Servizio per gatti' : 'Shampoo + asciugatura'),
+        price:
+          primary.pricingMode === 'FIXED'
+            ? Math.round((primary.priceCents ?? 0) / 100)
+            : minCentsForService(payload, primary.id),
+        min: primary.durationMin,
+      });
+      for (const a of addons) {
+        const price =
+          a.pricingMode === 'FIXED' || primary.pricingMode === 'FIXED'
+            ? (a.pricingMode === 'FIXED' ? Math.round((a.priceCents ?? 0) / 100) : minCentsForService(payload, a.id)) +
+              (primary.pricingMode === 'FIXED' ? Math.round((primary.priceCents ?? 0) / 100) : minCentsForService(payload, primary.id))
+            : sumMin(payload, [primary.id, a.id]);
+        out.push({
+          emoji: emojiFor(a),
+          name: `${labelOf(primary)} + ${labelOf(a)}`,
+          desc: a.description || '',
+          price,
+          min: primary.durationMin + a.durationMin,
+        });
+      }
+    } else {
+      // No default — show each service standalone
+      for (const a of addons) {
+        out.push({
+          emoji: emojiFor(a),
+          name: labelOf(a),
+          desc: a.description || '',
+          price:
+            a.pricingMode === 'FIXED'
+              ? Math.round((a.priceCents ?? 0) / 100)
+              : minCentsForService(payload, a.id),
+          min: a.durationMin,
+        });
+      }
+    }
+    return out;
+  };
+
+  const cards: Card[] = cardsForAnimal('DOG', dogPrices);
+  void catPrices;
+
   return (
     <div className="min-h-screen" style={{ background: 'var(--cream-100)' }}>
 
@@ -20,20 +142,14 @@ export default function HomePage() {
       <main>
         {/* Hero */}
         <section className="relative overflow-hidden px-5 pb-14 pt-12 text-center">
-          {/* Floating paw halo */}
           <div className="relative mx-auto mb-8 flex h-32 w-32 items-center justify-center">
-            <div
-              className="absolute inset-0 rounded-full animate-pulse-soft"
-              style={{ background: 'radial-gradient(circle, var(--sage-100), transparent 70%)' }}
-            />
             <Image
               src="/logo.png"
               alt="CleanDOG"
               width={112}
               height={112}
               priority
-              className="relative rounded-full shadow-md animate-floaty"
-              style={{ boxShadow: 'var(--shadow-md)' }}
+              className="relative rounded-full animate-floaty"
             />
           </div>
 
@@ -96,12 +212,7 @@ export default function HomePage() {
           <div className="mx-auto max-w-screen-md">
             <p className="eyebrow mb-5 text-center">Cosa offriamo</p>
             <div className="space-y-3">
-              {[
-                { emoji: '🛁', name: 'Bagno & Asciugatura', desc: 'Shampoo naturale, asciugatura delicata', price: 'Da 28€', min: '45 min' },
-                { emoji: '✂️', name: 'Taglio & Styling', desc: 'Forbici, rifinitura su misura', price: 'Da 38€', min: '60 min' },
-                { emoji: '⭐', name: 'Toelettatura completa', desc: 'Bagno + taglio + unghie + orecchie', price: 'Da 58€', min: '90 min', popular: true },
-                { emoji: '🐱', name: 'Servizi per gatti', desc: 'Bagno, toelettatura, tosatura igienica', price: 'Da 35€', min: '45 min' },
-              ].map((s) => (
+              {cards.map((s) => (
                 <div key={s.name} className="card-cd flex items-center gap-4 p-4">
                   <div
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl"
@@ -119,10 +230,14 @@ export default function HomePage() {
                       )}
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--ink-500)' }}>{s.desc}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--ink-300)' }}>⏱ {s.min}</p>
+                    {s.min != null && (
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--ink-300)' }}>⏱ {s.min} min</p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="display text-lg" style={{ color: 'var(--sage-800)' }}>{s.price}</p>
+                    <p className="display text-lg" style={{ color: 'var(--sage-800)' }}>
+                      {s.price > 0 ? `Da ${s.price}€` : '—'}
+                    </p>
                   </div>
                 </div>
               ))}

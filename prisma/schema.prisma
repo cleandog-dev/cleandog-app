@@ -40,22 +40,70 @@ model User {
 model Service {
   id                       String    @id @default(cuid())
   name                     String    @unique
+  displayName              String?
   description              String?
   durationMin              Int
   bufferMin                Int       @default(15)
-  priceCents               Int
+  priceCents               Int       // used only if pricingMode = FIXED
+  // Pricing model
+  pricingMode              String    @default("FIXED")  // 'FIXED' | 'PER_BREED'
+  breedScope               String    @default("ALL")    // 'ALL' | 'SELECTED' (only when PER_BREED)
+  isDefault                Boolean   @default(false)    // e.g. bagno: always included in booking flow
+  // Legacy (kept for back-compat during transition)
   priceCoatShortMinCents   Int?
   priceCoatShortMaxCents   Int?
   priceCoatLongMinCents    Int?
   priceCoatLongMaxCents    Int?
   size                     DogSize?
-  forAnimal                String?   // 'DOG' | 'CAT'
+  forAnimal                String?   // 'DOG' | 'CAT' | null=Altro
   active                   Boolean   @default(true)
+  sortOrder                Int       @default(0)
+  deletedAt                DateTime?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   bookings                 Booking[]
+  breedPrices              BreedServicePrice[]
 
   @@index([active])
+  @@index([deletedAt])
+}
+
+model BreedSizeOption {
+  id        String   @id @default(cuid())
+  breedId   String
+  breed     Breed    @relation(fields: [breedId], references: [id], onDelete: Cascade)
+  label     String   // visible label (e.g. "Piccolo", "Grande", "XL")
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  prices    BreedServicePrice[]
+  bookings  Booking[]
+
+  @@index([breedId])
+}
+
+model BreedServicePrice {
+  id              String   @id @default(cuid())
+  breedId         String
+  breed           Breed    @relation(fields: [breedId], references: [id], onDelete: Cascade)
+  serviceId       String
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  // Variant axes: optional size + optional coat ('SHORT' | 'LONG' | null).
+  // null sizeOption + null coat = single-variant row (no size picker, non-MIXED breed).
+  sizeOptionId    String?
+  sizeOption      BreedSizeOption? @relation(fields: [sizeOptionId], references: [id], onDelete: Cascade)
+  coat            String?
+  priceCents      Int?     // null = not configured yet
+  priceLongCents  Int?     // legacy — used only when coat is null AND breed is MIXED
+  durationMin     Int?     // override Service.durationMin for this (breed, service, size, coat). null = inherit
+  active          Boolean  @default(true)  // breed opt-in/out for this service
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([breedId, serviceId])
+  @@index([sizeOptionId])
+  @@index([serviceId])
 }
 
 // Generic key/value settings (slot_step_min, etc.)
@@ -99,17 +147,23 @@ model Extra {
 }
 
 model Breed {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  animalType String   // 'DOG' | 'CAT'
-  size       DogSize?
-  coatType   String?  // 'SHORT' | 'LONG' | 'MIXED'
-  priceMin   Int
-  priceMax   Int
-  active     Boolean  @default(true)
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String   @unique
+  animalType      String   // 'DOG' | 'CAT'
+  size            DogSize?
+  coatType        String?  // 'SHORT' | 'LONG' | 'MIXED'
+  // Legacy price columns — read fallback during transition. New code uses BreedServicePrice.
+  priceMin        Int      @default(0)
+  priceMax        Int      @default(0)
+  priceTrim       Int?
+  priceTrimLong   Int?
+  priceTouchUp    Int?
+  active          Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  servicePrices   BreedServicePrice[]
+  sizeOptions     BreedSizeOption[]
 
   @@index([animalType, active])
   @@index([size])
@@ -119,6 +173,7 @@ model Booking {
   id            String        @id @default(cuid())
   serviceId     String
   service       Service       @relation(fields: [serviceId], references: [id])
+  serviceName   String?       // snapshot of Service.name at booking time (survives soft-delete/rename)
   startsAt      DateTime
   endsAt        DateTime
   status        BookingStatus @default(CONFIRMED)
@@ -129,15 +184,60 @@ model Booking {
   dogBreed      String?
   dogSize       DogSize?
   notes         String?
+  sizeOptionId  String?
+  sizeOption    BreedSizeOption? @relation(fields: [sizeOptionId], references: [id], onDelete: SetNull)
+  dogSizeLabel  String?         // snapshot of size label at booking time
   priceCents    Int
+  // Price snapshot at booking time
+  bathCents     Int?
+  trimCents     Int?
+  touchUpCents  Int?
+  extrasCents   Int?
+  extrasJson    String?       // JSON: [{name, priceCents}]
+  addonItemsJson String?      // JSON: [{serviceId, name, priceCents}] — main service addons
+  coatChoice    String?       // 'SHORT' | 'LONG'
+  // Reminder tracking
+  reminderSentAt DateTime?
   privacyConsent Boolean      @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  // Overlap protection handled by transactional check in createBookingAction.
-  // (Removed @@unique on [startsAt, status] to allow admin force-overlap.)
   @@index([startsAt])
   @@index([endsAt])
   @@index([status])
   @@index([customerEmail])
+  @@index([customerPhone])
+}
+
+model PushSubscription {
+  id            String   @id @default(cuid())
+  endpoint      String   @unique
+  p256dh        String
+  auth          String
+  // 'ADMIN' linked to userId, 'CLIENT' linked to phone
+  scope         String   // 'ADMIN' | 'CLIENT'
+  userId        String?
+  customerPhone String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+  lastUsedAt    DateTime @default(now())
+
+  @@index([scope])
+  @@index([userId])
+  @@index([customerPhone])
+}
+
+model NotificationLog {
+  id           String   @id @default(cuid())
+  event        String   // 'BOOKING_CREATED' | 'BOOKING_CANCELLED' | 'REMINDER_ADMIN' | 'REMINDER_CLIENT' | 'BOOKING_CONFIRMED'
+  scope        String   // 'ADMIN' | 'CLIENT'
+  bookingId    String?
+  subscriptionId String?
+  status       String   // 'SENT' | 'FAILED' | 'SKIPPED'
+  error        String?
+  payload      String?  // JSON snapshot of pushed message
+  createdAt    DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([bookingId])
 }

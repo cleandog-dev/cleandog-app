@@ -18,9 +18,16 @@ import {
 import { rateLimit } from '@/lib/rate-limit';
 import { sendBookingConfirmation } from '@/lib/email';
 import { auth } from '@/lib/auth';
-import { findBreedByName, getCatBreed } from '@/lib/breeds-server';
+import { findBreedByName, getBreedWithServicePrices, type BreedServicePriceRow, type BreedSizeOptionDTO } from '@/lib/breeds-server';
 import { parseExtraNamesFromNotes } from '@/lib/utils';
 import { getSlotStepMin } from '@/lib/settings';
+import { pushToAdmins, pushToClientPhone } from '@/lib/push';
+import {
+  buildBookingCreatedAdminPayload,
+  buildBookingConfirmedClientPayload,
+  buildBookingCancelledAdminPayload,
+} from '@/lib/notify-builders';
+import { priceBooking } from '@/lib/pricing';
 
 export type ActionResult<T = unknown> =
   | { ok: true; data: T }
@@ -61,11 +68,21 @@ export async function createBookingAction(
     return { ok: false, error: 'Servizio non disponibile' };
   }
 
+  // Pre-compute price + per-cell duration override (so endsAt reflects breed×size×coat overrides).
+  const priced = await priceBooking({
+    primaryServiceId: service.id,
+    addonServiceIds: input.addonServiceIds,
+    breedName: input.dogBreed,
+    coatChoice: input.coatChoice ?? null,
+    sizeOptionId: input.sizeOptionId ?? null,
+  });
+  const totalDuration = priced.totalDurationMin > 0 ? priced.totalDurationMin : service.durationMin;
+
   const startsAt = new Date(input.startsAt);
   if (Number.isNaN(startsAt.getTime()) || startsAt <= new Date()) {
     return { ok: false, error: 'Orario non valido' };
   }
-  const endsAt = new Date(startsAt.getTime() + service.durationMin * 60_000);
+  const endsAt = new Date(startsAt.getTime() + totalDuration * 60_000);
 
   try {
     const booking = await prisma.$transaction(async (tx) => {
@@ -86,56 +103,57 @@ export async function createBookingAction(
       });
       if (overlap) throw new Error('OVERLAP');
 
-      // Compute price (min of range — final price agreed in shop)
-      let priceCents = service.priceCents;
+      // Resolve dogSize for legacy snapshot
       let dogSize: 'SMALL' | 'MEDIUM' | 'LARGE' | null = null;
-      if (input.animalType === 'CAT') {
-        const catBreed = await getCatBreed();
-        if (catBreed) priceCents = catBreed.priceMin * 100;
-      } else {
-        const breed = await findBreedByName(input.dogBreed);
-        const hasBath  = /bagno/i.test(service.name);
-        const hasGroom = /tosatura/i.test(service.name);
-        const bathCents = hasBath && breed ? breed.priceMin * 100 : 0;
-        let groomCents = 0;
-        if (hasGroom) {
-          // Derive coat: from breed; if MIXED, use client choice
-          const breedCoat = breed?.coatType;
-          const coat = breedCoat === 'MIXED' ? input.coatChoice : breedCoat;
-          if (coat === 'LONG') {
-            groomCents = service.priceCoatLongMinCents ?? service.priceCents;
-          } else {
-            groomCents = service.priceCoatShortMinCents ?? service.priceCents;
-          }
-        }
-        priceCents = bathCents + groomCents;
-        if (priceCents === 0) priceCents = service.priceCents;
-        if (breed) dogSize = breed.size;
-      }
+      const breed = await findBreedByName(input.dogBreed);
+      if (breed) dogSize = breed.size;
 
-      // Add extras from notes
+      let priceCents = priced.serviceTotalCents;
+      if (priceCents === 0) priceCents = service.priceCents;
+
+      // Add extras from notes + snapshot
       const extraNames = parseExtraNamesFromNotes(input.notes);
+      let extrasCents = 0;
+      let extrasSnapshot: Array<{ name: string; priceCents: number }> = [];
       if (extraNames.length) {
         const exs = await tx.extra.findMany({
           where: { name: { in: extraNames }, active: true },
         });
-        priceCents += exs.reduce((s, e) => s + e.priceCents, 0);
+        extrasCents = exs.reduce((s, e) => s + e.priceCents, 0);
+        extrasSnapshot = exs.map((e) => ({ name: e.name, priceCents: e.priceCents }));
+        priceCents += extrasCents;
+      }
+
+      let dogSizeLabel: string | null = null;
+      if (input.sizeOptionId) {
+        const sz = await tx.breedSizeOption.findUnique({ where: { id: input.sizeOptionId } });
+        dogSizeLabel = sz?.label ?? null;
       }
 
       return tx.booking.create({
         data: {
           serviceId: service.id,
+          serviceName: service.name,
+          sizeOptionId: input.sizeOptionId ?? null,
+          dogSizeLabel,
           startsAt,
           endsAt,
           status: 'CONFIRMED',
           customerName: input.customerName,
-          customerEmail: input.customerEmail.toLowerCase(),
+          customerEmail: input.customerEmail ? input.customerEmail.toLowerCase() : '',
           customerPhone: input.customerPhone,
           dogName: input.dogName || '',
           dogBreed: input.dogBreed,
           dogSize,
           notes: input.notes || null,
           priceCents,
+          bathCents: priced.bathCents,
+          trimCents: priced.trimCents,
+          touchUpCents: priced.touchUpCents,
+          extrasCents: extrasSnapshot.length ? extrasCents : null,
+          extrasJson: extrasSnapshot.length ? JSON.stringify(extrasSnapshot) : null,
+          addonItemsJson: priced.addonItems.length ? JSON.stringify(priced.addonItems) : null,
+          coatChoice: input.coatChoice ?? null,
           privacyConsent: input.privacyConsent,
         },
       });
@@ -143,15 +161,34 @@ export async function createBookingAction(
 
     revalidatePath('/admin/dashboard');
 
-    // Fire-and-forget email
-    sendBookingConfirmation({
-      to: booking.customerEmail,
-      customerName: booking.customerName,
-      dogName: booking.dogName,
-      serviceName: service.name,
-      startsAt: booking.startsAt,
-      priceCents: booking.priceCents,
-    }).catch((e) => console.error('Email send failed:', e));
+    // Fire-and-forget email (only if customer provided email)
+    if (booking.customerEmail) {
+      sendBookingConfirmation({
+        to: booking.customerEmail,
+        customerName: booking.customerName,
+        dogName: booking.dogName,
+        serviceName: service.name,
+        startsAt: booking.startsAt,
+        priceCents: booking.priceCents,
+      }).catch((e) => console.error('Email send failed:', e));
+    }
+
+    // Push notification → admin (new booking)
+    pushToAdmins(
+      'BOOKING_CREATED',
+      buildBookingCreatedAdminPayload(booking, service.name),
+      booking.id,
+    ).catch((e) => console.error('Admin push failed:', e));
+
+    // Push notification → client (booking confirmed, if already subscribed for phone)
+    if (booking.customerPhone) {
+      pushToClientPhone(
+        booking.customerPhone,
+        'BOOKING_CONFIRMED',
+        buildBookingConfirmedClientPayload(booking, service.name),
+        booking.id,
+      ).catch((e) => console.error('Client push failed:', e));
+    }
 
     return { ok: true, data: { id: booking.id } };
   } catch (e) {
@@ -189,9 +226,18 @@ export async function adminCreateBookingAction(
   const service = await prisma.service.findUnique({ where: { id: input.serviceId } });
   if (!service) return { ok: false, error: 'Servizio non trovato' };
 
+  const priced = await priceBooking({
+    primaryServiceId: service.id,
+    addonServiceIds: input.addonServiceIds,
+    breedName: input.dogBreed || null,
+    coatChoice: input.coatChoice ?? null,
+    sizeOptionId: input.sizeOptionId ?? null,
+  });
+  const totalDurationAdmin = priced.totalDurationMin > 0 ? priced.totalDurationMin : service.durationMin;
+
   const startsAt = new Date(input.startsAt);
   if (Number.isNaN(startsAt.getTime())) return { ok: false, error: 'Orario non valido' };
-  const endsAt = new Date(startsAt.getTime() + service.durationMin * 60_000);
+  const endsAt = new Date(startsAt.getTime() + totalDurationAdmin * 60_000);
 
   try {
     const booking = await prisma.$transaction(async (tx) => {
@@ -212,41 +258,40 @@ export async function adminCreateBookingAction(
         if (overlap) throw new Error('OVERLAP');
       }
 
-      let priceCents = service.priceCents;
       let dogSize: 'SMALL' | 'MEDIUM' | 'LARGE' | null = null;
-      if (input.animalType === 'CAT') {
-        const catBreed = await getCatBreed();
-        if (catBreed) priceCents = catBreed.priceMin * 100;
-      } else if (input.dogBreed) {
+      if (input.dogBreed) {
         const breed = await findBreedByName(input.dogBreed);
-        const hasBath  = /bagno/i.test(service.name);
-        const hasGroom = /tosatura/i.test(service.name);
-        const bathCents = hasBath && breed ? breed.priceMin * 100 : 0;
-        let groomCents = 0;
-        if (hasGroom) {
-          const breedCoat = breed?.coatType;
-          const coat = breedCoat === 'MIXED' ? input.coatChoice : breedCoat;
-          groomCents = coat === 'LONG'
-            ? (service.priceCoatLongMinCents ?? service.priceCents)
-            : (service.priceCoatShortMinCents ?? service.priceCents);
-        }
-        priceCents = bathCents + groomCents;
-        if (priceCents === 0) priceCents = service.priceCents;
         if (breed) dogSize = breed.size;
       }
 
-      // Add extras from notes
+      let priceCents = priced.serviceTotalCents;
+      if (priceCents === 0) priceCents = service.priceCents;
+
+      // Add extras from notes + snapshot
       const extraNames = parseExtraNamesFromNotes(input.notes);
+      let extrasCents = 0;
+      let extrasSnapshot: Array<{ name: string; priceCents: number }> = [];
       if (extraNames.length) {
         const exs = await tx.extra.findMany({
           where: { name: { in: extraNames }, active: true },
         });
-        priceCents += exs.reduce((s, e) => s + e.priceCents, 0);
+        extrasCents = exs.reduce((s, e) => s + e.priceCents, 0);
+        extrasSnapshot = exs.map((e) => ({ name: e.name, priceCents: e.priceCents }));
+        priceCents += extrasCents;
+      }
+
+      let dogSizeLabel: string | null = null;
+      if (input.sizeOptionId) {
+        const sz = await tx.breedSizeOption.findUnique({ where: { id: input.sizeOptionId } });
+        dogSizeLabel = sz?.label ?? null;
       }
 
       return tx.booking.create({
         data: {
           serviceId: service.id,
+          serviceName: service.name,
+          sizeOptionId: input.sizeOptionId ?? null,
+          dogSizeLabel,
           startsAt,
           endsAt,
           status: 'CONFIRMED',
@@ -258,12 +303,27 @@ export async function adminCreateBookingAction(
           dogSize,
           notes: input.notes || null,
           priceCents,
+          bathCents: priced.bathCents,
+          trimCents: priced.trimCents,
+          touchUpCents: priced.touchUpCents,
+          extrasCents: extrasSnapshot.length ? extrasCents : null,
+          extrasJson: extrasSnapshot.length ? JSON.stringify(extrasSnapshot) : null,
+          addonItemsJson: priced.addonItems.length ? JSON.stringify(priced.addonItems) : null,
+          coatChoice: input.coatChoice ?? null,
           privacyConsent: true,
         },
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     revalidatePath('/admin/dashboard');
+
+    // Push to admins also when admin creates a booking
+    pushToAdmins(
+      'BOOKING_CREATED',
+      buildBookingCreatedAdminPayload(booking, service.name),
+      booking.id,
+    ).catch((e) => console.error('Admin push failed:', e));
+
     return { ok: true, data: { id: booking.id } };
   } catch (e) {
     if (e instanceof Error && e.message === 'OVERLAP') {
@@ -317,10 +377,25 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
   });
   if (!booking) return { ok: false, error: 'Prenotazione non trovata' };
 
+  // Resolve total duration including per-cell (breed×size×coat) overrides.
+  let addonIds: string[] = [];
+  if (booking.addonItemsJson) {
+    try {
+      const arr = JSON.parse(booking.addonItemsJson) as Array<{ serviceId?: string }>;
+      addonIds = arr.map((x) => x.serviceId).filter((x): x is string => !!x);
+    } catch {}
+  }
+  const pricedEdit = await priceBooking({
+    primaryServiceId: booking.serviceId,
+    addonServiceIds: addonIds,
+    breedName: booking.dogBreed,
+    coatChoice: (booking.coatChoice === 'SHORT' || booking.coatChoice === 'LONG') ? booking.coatChoice : null,
+    sizeOptionId: booking.sizeOptionId,
+  });
+  const totalDuration = pricedEdit.totalDurationMin > 0 ? pricedEdit.totalDurationMin : booking.service.durationMin;
+
   const startsAt = new Date(parsed.data.startsAt);
-  const endsAt = new Date(
-    startsAt.getTime() + booking.service.durationMin * 60_000,
-  );
+  const endsAt = new Date(startsAt.getTime() + totalDuration * 60_000);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -359,20 +434,75 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
 export async function deleteBookingAction(bookingId: string): Promise<ActionResult> {
   await requireAdmin();
   if (!bookingId) return { ok: false, error: 'ID mancante' };
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: { service: true },
+  });
   await prisma.booking.delete({ where: { id: bookingId } });
   revalidatePath('/admin/dashboard');
+
+  if (booking) {
+    pushToAdmins(
+      'BOOKING_CANCELLED',
+      buildBookingCancelledAdminPayload(booking, booking.service.name),
+      booking.id,
+    ).catch((e) => console.error('Admin push failed:', e));
+  }
+
   return { ok: true, data: null };
 }
 
-// ── Admin: delete service ──────────────────────────────────────
+// ── Admin: move service up/down (swap sortOrder with neighbour) ──
+export async function moveServiceAction(
+  id: string,
+  direction: 'up' | 'down',
+): Promise<ActionResult> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: 'ID mancante' };
+  const svc = await prisma.service.findUnique({ where: { id } });
+  if (!svc || svc.deletedAt) return { ok: false, error: 'Servizio non trovato' };
+  // Find neighbour in same forAnimal group, by sortOrder.
+  const neighbour = await prisma.service.findFirst({
+    where: {
+      id: { not: id },
+      deletedAt: null,
+      forAnimal: svc.forAnimal,
+      ...(direction === 'up'
+        ? { sortOrder: { lt: svc.sortOrder } }
+        : { sortOrder: { gt: svc.sortOrder } }),
+    },
+    orderBy: { sortOrder: direction === 'up' ? 'desc' : 'asc' },
+  });
+  if (!neighbour) return { ok: true, data: null }; // already at edge
+  await prisma.$transaction([
+    prisma.service.update({ where: { id: svc.id }, data: { sortOrder: neighbour.sortOrder } }),
+    prisma.service.update({ where: { id: neighbour.id }, data: { sortOrder: svc.sortOrder } }),
+  ]);
+  revalidatePath('/admin/services');
+  revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Admin: soft-delete service ─────────────────────────────────
+// Booking storici restano leggibili (FK intact + serviceName snapshot).
+// Nome rinominato con suffisso per liberare il vincolo unique → ricreabile.
 export async function deleteServiceAction(id: string): Promise<ActionResult> {
   await requireAdmin();
   if (!id) return { ok: false, error: 'ID mancante' };
-  const bookings = await prisma.booking.count({ where: { serviceId: id } });
-  if (bookings > 0)
-    return { ok: false, error: `Impossibile eliminare: ${bookings} prenotazion${bookings === 1 ? 'e' : 'i'} collegate.` };
-  await prisma.service.delete({ where: { id } });
+  const svc = await prisma.service.findUnique({ where: { id } });
+  if (!svc) return { ok: false, error: 'Servizio non trovato' };
+  if (svc.deletedAt) return { ok: true, data: null };
+  const suffix = `__deleted_${id.slice(-6)}_${Date.now().toString(36)}`;
+  await prisma.service.update({
+    where: { id },
+    data: {
+      name: `${svc.name}${suffix}`,
+      active: false,
+      deletedAt: new Date(),
+    },
+  });
   revalidatePath('/admin/services');
+  revalidatePath('/admin/breeds');
   revalidatePath('/prenota');
   return { ok: true, data: null };
 }
@@ -392,6 +522,7 @@ export async function upsertServiceAction(
     };
   }
   if (serviceId) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { name: _name, ...updateData } = parsed.data;
     const before = await prisma.service.findUnique({ where: { id: serviceId } });
     await prisma.service.update({ where: { id: serviceId }, data: updateData });
@@ -411,10 +542,51 @@ export async function upsertServiceAction(
       }
     }
   } else {
-    await prisma.service.create({ data: parsed.data });
+    // If a soft-deleted service with same original name exists → restore it.
+    const restoreTarget = await prisma.service.findFirst({
+      where: {
+        deletedAt: { not: null },
+        name: { startsWith: `${parsed.data.name}__deleted_` },
+      },
+      orderBy: { deletedAt: 'desc' },
+    });
+    // Append to bottom of its forAnimal group on create (sortOrder = max + 10).
+    const maxRow = await prisma.service.aggregate({
+      _max: { sortOrder: true },
+      where: { deletedAt: null, forAnimal: parsed.data.forAnimal ?? null },
+    });
+    const nextSortOrder = (maxRow._max.sortOrder ?? 0) + 10;
+    const created = restoreTarget
+      ? await prisma.service.update({
+          where: { id: restoreTarget.id },
+          data: { ...parsed.data, deletedAt: null, sortOrder: nextSortOrder },
+        })
+      : await prisma.service.create({ data: { ...parsed.data, sortOrder: nextSortOrder } });
+    // Auto-populate BreedServicePrice if PER_BREED + ALL: row per breed matching forAnimal
+    if (created.pricingMode === 'PER_BREED' && created.breedScope === 'ALL') {
+      const breeds = await prisma.breed.findMany({
+        where: created.forAnimal ? { animalType: created.forAnimal } : {},
+        select: { id: true },
+      });
+      if (breeds.length) {
+        // Auto-populate placeholder rows for each breed, but as **opt-out by default**:
+        // active=false means the service is not enabled for this breed until admin opts in
+        // by setting a price (or toggling Attivo). Avoids spamming "Mancano prezzi" warnings.
+        await prisma.breedServicePrice.createMany({
+          data: breeds.map((b) => ({
+            breedId: b.id,
+            serviceId: created.id,
+            priceCents: null,
+            active: false,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
   }
   revalidatePath('/admin/dashboard');
   revalidatePath('/admin/staff');
+  revalidatePath('/admin/breeds');
   revalidatePath('/prenota');
   return { ok: true, data: null };
 }
@@ -513,19 +685,33 @@ export async function getDayOverviewAction({
 // ── Admin: one-shot recompute endsAt of all future bookings ───────
 export async function recomputeBookingEndsAtAction(): Promise<ActionResult<{ updated: number }>> {
   await requireAdmin();
-  const services = await prisma.service.findMany({ select: { id: true, durationMin: true } });
-  const map = new Map(services.map((s) => [s.id, s.durationMin]));
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const future = await prisma.booking.findMany({
     where: { startsAt: { gte: startOfToday } },
-    select: { id: true, startsAt: true, endsAt: true, serviceId: true },
+    select: {
+      id: true, startsAt: true, endsAt: true, serviceId: true,
+      addonItemsJson: true, dogBreed: true, sizeOptionId: true, coatChoice: true,
+    },
   });
   let updated = 0;
   for (const b of future) {
-    const dur = map.get(b.serviceId);
-    if (dur == null) continue;
-    const newEnd = new Date(b.startsAt.getTime() + dur * 60_000);
+    let addonIds: string[] = [];
+    if (b.addonItemsJson) {
+      try {
+        const arr = JSON.parse(b.addonItemsJson) as Array<{ serviceId?: string }>;
+        addonIds = arr.map((x) => x.serviceId).filter((x): x is string => !!x);
+      } catch {}
+    }
+    const priced = await priceBooking({
+      primaryServiceId: b.serviceId,
+      addonServiceIds: addonIds,
+      breedName: b.dogBreed,
+      coatChoice: (b.coatChoice === 'SHORT' || b.coatChoice === 'LONG') ? b.coatChoice : null,
+      sizeOptionId: b.sizeOptionId,
+    });
+    if (priced.totalDurationMin <= 0) continue;
+    const newEnd = new Date(b.startsAt.getTime() + priced.totalDurationMin * 60_000);
     if (newEnd.getTime() !== b.endsAt.getTime()) {
       await prisma.booking.update({ where: { id: b.id }, data: { endsAt: newEnd } });
       updated++;
@@ -550,35 +736,39 @@ export async function recomputeBookingPricesAction(): Promise<ActionResult<{ upd
 
   let updated = 0;
   for (const b of bookings) {
-    let priceCents = b.service.priceCents;
-    if (b.dogBreed) {
-      const breed = await findBreedByName(b.dogBreed);
-      const hasBath = /bagno/i.test(b.service.name);
-      const hasGroom = /tosatura/i.test(b.service.name);
-      const bathCents = hasBath && breed ? breed.priceMin * 100 : 0;
-      let groomCents = 0;
-      if (hasGroom) {
-        const breedCoat = breed?.coatType;
-        // For MIXED coats we can't infer client choice — use SHORT as fallback
-        const coat = breedCoat === 'MIXED' ? 'SHORT' : breedCoat;
-        groomCents = coat === 'LONG'
-          ? (b.service.priceCoatLongMinCents ?? b.service.priceCents)
-          : (b.service.priceCoatShortMinCents ?? b.service.priceCents);
-      }
-      priceCents = bathCents + groomCents;
-      if (priceCents === 0) priceCents = b.service.priceCents;
-    } else if (/gatto/i.test(b.service.name)) {
-      const catBreed = await getCatBreed();
-      if (catBreed) priceCents = catBreed.priceMin * 100;
+    let addonServiceIds: string[] = [];
+    if (b.addonItemsJson) {
+      try {
+        const arr = JSON.parse(b.addonItemsJson) as Array<{ serviceId?: string }>;
+        addonServiceIds = arr.map((x) => x.serviceId).filter((x): x is string => !!x);
+      } catch {}
     }
-    // Extras
+    const priced = await priceBooking({
+      primaryServiceId: b.serviceId,
+      addonServiceIds,
+      breedName: b.dogBreed,
+      coatChoice: (b.coatChoice as 'SHORT' | 'LONG' | null) ?? null,
+      sizeOptionId: b.sizeOptionId ?? null,
+    });
+    let priceCents = priced.serviceTotalCents;
+    if (priceCents === 0) priceCents = b.service.priceCents;
+    // Extras (snapshot if present, else from notes)
     const extraNames = parseExtraNamesFromNotes(b.notes);
     for (const n of extraNames) {
       const c = extraByName.get(n);
       if (c) priceCents += c;
     }
     if (priceCents !== b.priceCents) {
-      await prisma.booking.update({ where: { id: b.id }, data: { priceCents } });
+      await prisma.booking.update({
+        where: { id: b.id },
+        data: {
+          priceCents,
+          bathCents: priced.bathCents,
+          trimCents: priced.trimCents,
+          touchUpCents: priced.touchUpCents,
+          addonItemsJson: priced.addonItems.length ? JSON.stringify(priced.addonItems) : null,
+        },
+      });
       updated++;
     }
   }
@@ -633,10 +823,13 @@ export async function upsertBreedAction(
   const data = {
     name: parsed.data.name,
     animalType: parsed.data.animalType,
-    size: parsed.data.animalType === 'DOG' ? (parsed.data.size ?? null) : null,
-    coatType: parsed.data.animalType === 'DOG' ? (parsed.data.coatType ?? null) : null,
+    size: parsed.data.size ?? null,
+    coatType: parsed.data.coatType ?? null,
     priceMin: parsed.data.priceMin,
     priceMax: parsed.data.priceMax,
+    priceTrim: parsed.data.priceTrim ?? null,
+    priceTrimLong: parsed.data.priceTrimLong ?? null,
+    priceTouchUp: parsed.data.priceTouchUp ?? null,
     active: parsed.data.active,
     sortOrder: parsed.data.sortOrder,
   };
@@ -660,6 +853,131 @@ export async function upsertBreedAction(
 export async function deleteBreedAction(id: string): Promise<ActionResult> {
   await requireAdmin();
   await prisma.breed.delete({ where: { id } });
+  revalidatePath('/admin/breeds');
+  revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Admin: load breed editor data ─────────────────────────────
+export async function getBreedEditorAction(breedId: string): Promise<
+  ActionResult<{ rows: BreedServicePriceRow[]; sizes: BreedSizeOptionDTO[] }>
+> {
+  await requireAdmin();
+  const res = await getBreedWithServicePrices(breedId);
+  if (!res) return { ok: false, error: 'Razza non trovata' };
+  return { ok: true, data: { rows: res.rows, sizes: res.sizes } };
+}
+
+// ── Admin: bulk upsert breed↔service prices (size × coat cells) ─
+export async function bulkUpsertBreedServicePricesAction(input: {
+  breedId: string;
+  // For each service: which cells exist (sizeOptionId+coat) with their price; plus a per-service active flag.
+  services: Array<{
+    serviceId: string;
+    active: boolean;
+    cells: Array<{
+      sizeOptionId: string | null;
+      coat: 'SHORT' | 'LONG' | null;
+      priceCents: number | null;
+      priceLongCents?: number | null;
+      durationMin?: number | null;
+    }>;
+  }>;
+}): Promise<ActionResult> {
+  await requireAdmin();
+  if (!input.breedId) return { ok: false, error: 'breedId mancante' };
+
+  // For each (service), delete existing rows and recreate from `cells`. Simpler than upsert
+  // when the cell set may change (sizes added/removed).
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
+  for (const s of input.services) {
+    // If admin entered any positive price, force the service active for this breed
+    // (auto-enable on pricing — saves a click). If toggle is explicitly off AND no prices,
+    // keep inactive.
+    const hasAnyPrice = s.cells.some(
+      (c) => (c.priceCents != null && c.priceCents > 0) || (c.priceLongCents != null && c.priceLongCents > 0),
+    );
+    const effectiveActive = hasAnyPrice ? true : s.active;
+    ops.push(
+      prisma.breedServicePrice.deleteMany({
+        where: { breedId: input.breedId, serviceId: s.serviceId },
+      }),
+    );
+    if (s.cells.length === 0) {
+      // No cells means single-variant null/null row for opt-in/out tracking.
+      ops.push(
+        prisma.breedServicePrice.create({
+          data: {
+            breedId: input.breedId,
+            serviceId: s.serviceId,
+            sizeOptionId: null,
+            coat: null,
+            priceCents: null,
+            priceLongCents: null,
+            durationMin: null,
+            active: effectiveActive,
+          },
+        }),
+      );
+      continue;
+    }
+    for (const c of s.cells) {
+      ops.push(
+        prisma.breedServicePrice.create({
+          data: {
+            breedId: input.breedId,
+            serviceId: s.serviceId,
+            sizeOptionId: c.sizeOptionId,
+            coat: c.coat,
+            priceCents: c.priceCents,
+            priceLongCents: c.priceLongCents ?? null,
+            durationMin: c.durationMin != null && c.durationMin > 0 ? c.durationMin : null,
+            active: effectiveActive,
+          },
+        }),
+      );
+    }
+  }
+  await prisma.$transaction(ops);
+  revalidatePath('/admin/breeds');
+  revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Admin: bulk replace breed sizes ───────────────────────────
+export async function setBreedSizesAction(input: {
+  breedId: string;
+  sizes: Array<{ id?: string; label: string; sortOrder: number; active: boolean }>;
+}): Promise<ActionResult> {
+  await requireAdmin();
+  if (!input.breedId) return { ok: false, error: 'breedId mancante' };
+  // Strategy: update existing by id; create new; soft-delete missing.
+  const existing = await prisma.breedSizeOption.findMany({ where: { breedId: input.breedId } });
+  const keepIds = new Set(input.sizes.filter((s) => s.id).map((s) => s.id!));
+  const toDelete = existing.filter((e) => !keepIds.has(e.id));
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
+  for (const e of toDelete) {
+    ops.push(prisma.breedSizeOption.delete({ where: { id: e.id } }));
+  }
+  for (const s of input.sizes) {
+    const label = s.label.trim();
+    if (!label) continue;
+    if (s.id) {
+      ops.push(
+        prisma.breedSizeOption.update({
+          where: { id: s.id },
+          data: { label, sortOrder: s.sortOrder, active: s.active },
+        }),
+      );
+    } else {
+      ops.push(
+        prisma.breedSizeOption.create({
+          data: { breedId: input.breedId, label, sortOrder: s.sortOrder, active: s.active },
+        }),
+      );
+    }
+  }
+  await prisma.$transaction(ops);
   revalidatePath('/admin/breeds');
   revalidatePath('/prenota');
   return { ok: true, data: null };

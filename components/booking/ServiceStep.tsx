@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import type { Service, Extra } from '@prisma/client';
-import { formatPrice, type AnimalType, type BreedEntry } from '@/lib/breeds';
+import type { AnimalType, BreedEntry, PricesByAnimal, BreedServicePriceEntry, BreedSizeOption } from '@/lib/breeds';
+import { makeCellKey } from '@/lib/breeds';
 
 export type CoatChoice = 'SHORT' | 'LONG';
 
@@ -16,39 +17,84 @@ export type ServiceSelection = {
   priceMax: number;
   extrasNote: string;
   coatChoice?: CoatChoice;
+  addonServiceIds: string[];
+  sizeOptionId?: string;
+  sizeLabel?: string;
 };
+
+/** Pick the best matching cell for (sizeOptionId, coat): exact, then size-only, then coat-only, then null/null. */
+function pickCell(
+  cells: Record<string, BreedServicePriceEntry> | undefined,
+  sizeOptionId: string | null,
+  coat: CoatChoice | null,
+): BreedServicePriceEntry | undefined {
+  if (!cells) return undefined;
+  const candidates: Array<[string | null, CoatChoice | null]> = [
+    [sizeOptionId, coat],
+    [sizeOptionId, null],
+    [null, coat],
+    [null, null],
+  ];
+  for (const [s, c] of candidates) {
+    const e = cells[makeCellKey(s, c)];
+    if (e) return e;
+  }
+  return undefined;
+}
+
+function priceForService(
+  service: Service,
+  cells: Record<string, BreedServicePriceEntry> | undefined,
+  sizeOptionId: string | null,
+  coatChoice: CoatChoice | null,
+  isMixed: boolean,
+): number {
+  if (service.pricingMode === 'FIXED') return Math.round((service.priceCents ?? 0) / 100);
+  const entry = pickCell(cells, sizeOptionId, coatChoice);
+  if (!entry || entry.active === false) return 0;
+  // Legacy fallback: row stored at (null,null) but breed is MIXED + LONG → use priceLongCents
+  const cents = isMixed && coatChoice === 'LONG' && entry.priceLongCents != null
+    ? entry.priceLongCents
+    : entry.priceCents ?? 0;
+  return Math.round((cents ?? 0) / 100);
+}
 
 export function ServiceStep({
   services,
   dogBreeds,
-  catPrice,
+  catBreeds,
   extrasList,
+  pricesByAnimal,
   initial,
   onSelect,
 }: {
   services: Service[];
   dogBreeds: BreedEntry[];
-  catPrice: { min: number; max: number } | null;
+  catBreeds: BreedEntry[];
   extrasList: Extra[];
+  pricesByAnimal: PricesByAnimal;
   initial?: ServiceSelection;
   onSelect: (s: ServiceSelection) => void;
 }) {
-  const initBreed = initial?.animalType === 'DOG'
-    ? dogBreeds.find((b) => b.name === initial.breed) ?? null
+  const initBreed = initial
+    ? (initial.animalType === 'DOG' ? dogBreeds : catBreeds).find((b) => b.name === initial.breed) ?? null
     : null;
 
   const initExtras = useMemo(() => {
     if (!initial?.extrasNote) return new Set<string>();
     const match = initial.extrasNote.match(/Extra:\s*(.+)$/);
     if (!match) return new Set<string>();
-    const names = match[1].split(/,\s*/).map((s) => s.trim());
+    const names = (match[1] ?? '').split(/,\s*/).map((s) => s.trim());
     const ids = extrasList.filter((e) => names.includes(e.name)).map((e) => e.id);
     return new Set(ids);
   }, [initial, extrasList]);
 
+  const initAddonIds = new Set<string>(initial?.addonServiceIds ?? []);
+
   const [animal, setAnimal]           = useState<AnimalType | null>(initial?.animalType ?? null);
-  const [serviceId, setServiceId]     = useState<string>(initial?.serviceId ?? '');
+  const [selectedAddonIds, setSelectedAddonIds] = useState<Set<string>>(initAddonIds);
   const [selectedBreed, setSelectedBreed] = useState<BreedEntry | null>(initBreed);
+  const [selectedSizeId, setSelectedSizeId] = useState<string | null>(initial?.sizeOptionId ?? null);
   const [search, setSearch]           = useState('');
   const [extras, setExtras]           = useState<Set<string>>(initExtras);
   const [mixedCoatChoice, setMixedCoatChoice] = useState<CoatChoice>(
@@ -60,56 +106,55 @@ export function ServiceStep({
   const searchRef   = useRef<HTMLInputElement | null>(null);
   const mountedRef  = useRef(false);
 
+  // Primary = isDefault service for animal (only one). Addons = others.
+  const primaryService = useMemo(
+    () => services.find((s) => s.forAnimal === animal && s.isDefault && s.active) ?? null,
+    [services, animal],
+  );
+  const addonServices = useMemo(
+    () => services
+      .filter((s) => s.forAnimal === animal && s.active && !s.isDefault)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    [services, animal],
+  );
+
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
-    if (animal && servicesRef.current) {
-      servicesRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (animal && breedRef.current) {
+      const t = setTimeout(() => {
+        breedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        searchRef.current?.focus({ preventScroll: true });
+      }, 80);
+      return () => clearTimeout(t);
     }
   }, [animal]);
 
   useEffect(() => {
     if (!mountedRef.current) return;
-    if (serviceId && breedRef.current) {
+    if (selectedBreed && servicesRef.current) {
       const t = setTimeout(() => {
-        breedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        if (animal === 'DOG') searchRef.current?.focus({ preventScroll: true });
+        servicesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 80);
       return () => clearTimeout(t);
     }
-  }, [serviceId, animal]);
+  }, [selectedBreed]);
 
-  const selectedService = services.find((s) => s.id === serviceId);
-
-  const serviceHasGroom = !!selectedService && /tosatura/i.test(selectedService.name);
-  const serviceHasBath  = !!selectedService && /bagno/i.test(selectedService.name);
-
-  // Derive coat: from breed; if MIXED, from user choice
   const breedCoat = selectedBreed?.coatType ?? null;
   const isMixed = breedCoat === 'MIXED';
   const effectiveCoat: CoatChoice | null =
-    !serviceHasGroom || animal !== 'DOG' ? null
-    : isMixed ? mixedCoatChoice
+    isMixed ? mixedCoatChoice
     : breedCoat === 'LONG' ? 'LONG'
-    : 'SHORT'; // default short for null/SHORT
+    : breedCoat === 'SHORT' ? 'SHORT'
+    : null;
 
-  const showCoatPicker = serviceHasGroom && animal === 'DOG' && isMixed;
+  const showCoatPicker = isMixed;
 
-  const groomRange = useMemo(() => {
-    if (!selectedService || !serviceHasGroom || animal !== 'DOG') return { min: 0, max: 0 };
-    const cents = (min: number | null | undefined, max: number | null | undefined) => ({
-      min: (min ?? 0) / 100,
-      max: (max ?? 0) / 100,
-    });
-    if (effectiveCoat === 'LONG') {
-      return cents(selectedService.priceCoatLongMinCents, selectedService.priceCoatLongMaxCents);
-    }
-    return cents(selectedService.priceCoatShortMinCents, selectedService.priceCoatShortMaxCents);
-  }, [selectedService, serviceHasGroom, animal, effectiveCoat]);
+  const breedsForAnimal = animal === 'CAT' ? catBreeds : dogBreeds;
 
-  const filtered = useMemo(() => {
+  const filtered = useMemo<BreedEntry[]>(() => {
     const q = search.toLowerCase();
-    return dogBreeds.filter((b) => b.name.toLowerCase().includes(q));
-  }, [search, dogBreeds]);
+    return breedsForAnimal.filter((b) => b.name.toLowerCase().includes(q));
+  }, [search, breedsForAnimal]);
 
   const visibleExtras = extrasList.filter((e) => e.active && (!e.dogOnly || animal === 'DOG'));
 
@@ -118,14 +163,65 @@ export function ServiceStep({
     [extras, extrasList],
   );
 
+  // Map of (breedId → serviceId → cellKey → entry) for currently selected animal
+  const animalPayload = animal ? pricesByAnimal[animal] : null;
+  const priceMap = useMemo(() => animalPayload?.pricesByBreed ?? {}, [animalPayload]);
+  const sizesMap = useMemo(() => animalPayload?.sizesByBreed ?? {}, [animalPayload]);
+
+  function lookupCells(breedId: string, serviceId: string): Record<string, BreedServicePriceEntry> | undefined {
+    return priceMap?.[breedId]?.[serviceId];
+  }
+
+  const breedSizes: BreedSizeOption[] = useMemo(
+    () => (selectedBreed ? (sizesMap[selectedBreed.id] ?? []) : []),
+    [selectedBreed, sizesMap],
+  );
+  const hasSizes = breedSizes.length > 0;
+
+  // Reset selectedSizeId when breed changes if it doesn't belong to this breed
+  useEffect(() => {
+    if (!selectedBreed) {
+      if (selectedSizeId !== null) setSelectedSizeId(null);
+      return;
+    }
+    if (!hasSizes) {
+      if (selectedSizeId !== null) setSelectedSizeId(null);
+      return;
+    }
+    // If only one size, auto-select
+    if (breedSizes.length === 1) {
+      const onlyId = breedSizes[0]?.id ?? null;
+      if (selectedSizeId !== onlyId) setSelectedSizeId(onlyId);
+      return;
+    }
+    // If currently selected not in this breed's sizes, clear
+    if (selectedSizeId && !breedSizes.find((s) => s.id === selectedSizeId)) {
+      setSelectedSizeId(null);
+    }
+  }, [selectedBreed, hasSizes, breedSizes, selectedSizeId]);
+
   const basePrice = useMemo(() => {
-    if (!animal) return null;
-    if (animal === 'CAT') return catPrice ? { min: catPrice.min, max: catPrice.max } : null;
     if (!selectedBreed) return null;
-    const bathMin = serviceHasBath ? selectedBreed.priceMin : 0;
-    const bathMax = serviceHasBath ? selectedBreed.priceMax : 0;
-    return { min: bathMin + groomRange.min, max: bathMax + groomRange.max };
-  }, [animal, selectedBreed, catPrice, serviceHasBath, groomRange]);
+    // If breed has 2+ sizes but none picked yet, withhold price.
+    if (hasSizes && breedSizes.length > 1 && !selectedSizeId) return null;
+    let total = 0;
+    if (primaryService) {
+      total += priceForService(
+        primaryService,
+        lookupCells(selectedBreed.id, primaryService.id),
+        selectedSizeId,
+        effectiveCoat,
+        isMixed,
+      );
+    }
+    for (const id of selectedAddonIds) {
+      const svc = addonServices.find((s) => s.id === id);
+      if (!svc) continue;
+      total += priceForService(svc, lookupCells(selectedBreed.id, svc.id), selectedSizeId, effectiveCoat, isMixed);
+    }
+    return { min: total, max: total };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBreed, primaryService, addonServices, selectedAddonIds, effectiveCoat, isMixed, priceMap, selectedSizeId, hasSizes, breedSizes.length]);
 
   const totalPrice = useMemo(() => {
     if (!basePrice) return null;
@@ -135,7 +231,17 @@ export function ServiceStep({
   function toggleExtra(id: string) {
     setExtras((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAddon(id: string) {
+    setSelectedAddonIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -143,32 +249,66 @@ export function ServiceStep({
   function changeAnimal(a: AnimalType) {
     setAnimal(a);
     setSelectedBreed(null);
+    setSelectedSizeId(null);
     setSearch('');
     setExtras(new Set());
-    setServiceId('');
+    setSelectedAddonIds(new Set());
   }
 
+  // Without a default service, user must pick at least one service from the list.
+  // Also: if breed has 2+ sizes, size must be picked.
+  const sizeRequiredButMissing = !!selectedBreed && breedSizes.length > 1 && !selectedSizeId;
   const canContinue =
-    !!animal && !!selectedService && (animal === 'CAT' || !!selectedBreed);
+    !!animal &&
+    !!selectedBreed &&
+    !sizeRequiredButMissing &&
+    (!!primaryService || selectedAddonIds.size > 0);
 
   function handleContinue() {
-    if (!canContinue || !selectedService || !animal) return;
+    if (!canContinue || !animal) return;
 
     const extraNames = extrasList.filter((e) => extras.has(e.id)).map((e) => e.name);
     const extrasNote = extraNames.length ? `Extra: ${extraNames.join(', ')}` : '';
 
     const priceBase = totalPrice ?? { min: 0, max: 0 };
 
+    // Resolve primary for booking: real isDefault when present, otherwise first selected by sortOrder.
+    let bookingPrimary: Service | null = primaryService;
+    let bookingAddonServices: Service[] = addonServices.filter((s) => selectedAddonIds.has(s.id));
+    if (!bookingPrimary) {
+      const ordered = bookingAddonServices.slice().sort((a, b) => a.sortOrder - b.sortOrder);
+      if (!ordered.length) return;
+      bookingPrimary = ordered[0] ?? null;
+      if (!bookingPrimary) return;
+      const primaryIdNonNull: string = bookingPrimary.id;
+      bookingAddonServices = ordered.filter((s) => s.id !== primaryIdNonNull);
+    }
+
+    // Duration = primary + sum addon durations
+    const addonDurations = bookingAddonServices.reduce((sum, s) => sum + s.durationMin, 0);
+    const durationMin = bookingPrimary.durationMin + addonDurations;
+
+    // Composite display name: primary [+ addon names]
+    const addonNames = bookingAddonServices.map((s) => s.displayName || s.name);
+    const primaryLabel = bookingPrimary.displayName || bookingPrimary.name;
+    const composedName = addonNames.length ? `${primaryLabel} + ${addonNames.join(' + ')}` : primaryLabel;
+
+    const pickedSize = selectedSizeId ? breedSizes.find((s) => s.id === selectedSizeId) : null;
+
     onSelect({
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      durationMin: selectedService.durationMin,
+      serviceId: bookingPrimary.id,
+      serviceName: composedName,
+      durationMin,
       animalType: animal,
-      breed: animal === 'CAT' ? 'Gatto' : (selectedBreed?.name ?? ''),
+      breed: selectedBreed?.name ?? '',
       priceMin: priceBase.min,
       priceMax: priceBase.max,
       extrasNote,
       coatChoice: effectiveCoat ?? undefined,
+      // Real list of addons sent to server (excludes the resolved primary).
+      addonServiceIds: bookingAddonServices.map((s) => s.id),
+      sizeOptionId: selectedSizeId ?? undefined,
+      sizeLabel: pickedSize?.label,
     });
   }
 
@@ -208,48 +348,118 @@ export function ServiceStep({
         </div>
       </div>
 
-      {/* ── 2. Servizi (filtrati per animale) ── */}
+      {/* ── 2. Razza (no prezzi nella lista) ── */}
       {animal && (
-        <div ref={servicesRef} style={{ scrollMarginTop: 16 }}>
-          <p className="eyebrow mb-3">Che servizio vuoi?</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {services
-              .filter((s) => s.forAnimal === animal)
-              .sort((a, b) => {
-                const order = (n: string) =>
-                  n.startsWith('Bagno +') ? 3 : n.startsWith('Bagno') ? 1 : 2;
-                return order(a.name) - order(b.name);
-              })
-              .map((s) => {
-              const sel = s.id === serviceId;
+        <div ref={breedRef} style={{ scrollMarginTop: 16 }}>
+          <p className="eyebrow mb-3">Razza {animal === 'CAT' ? 'del gatto' : 'del cane'}</p>
+
+          {selectedBreed ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                padding: '10px 14px',
+                borderRadius: 'var(--r-md)',
+                background: 'var(--sage-800)',
+                color: 'white',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600 }}>
+                <span style={{ fontSize: 15 }}>✓</span>
+                {selectedBreed.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBreed(null);
+                  setSearch('');
+                  setTimeout(() => searchRef.current?.focus(), 50);
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.18)',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '5px 12px',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                }}
+              >
+                Cambia razza
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                ref={searchRef}
+                type="text"
+                className="input-cd"
+                placeholder={animal === 'CAT' ? 'Cerca… es. Persiano, Siamese' : 'Cerca… es. Labrador, Maltese, Yorkshire'}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ marginBottom: 8 }}
+              />
+              <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, paddingRight: 2 }}>
+                {filtered.map((breed: BreedEntry) => (
+                  <button
+                    key={breed.id}
+                    type="button"
+                    onClick={() => setSelectedBreed(breed)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+                      padding: '12px 14px',
+                      borderRadius: 'var(--r-md)',
+                      border: '1px solid var(--cream-200)',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all var(--dur-fast) var(--ease-organic)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-800)' }}>
+                      {breed.name}
+                    </span>
+                  </button>
+                ))}
+                {filtered.length === 0 && (
+                  <p style={{ fontSize: 13, color: 'var(--ink-400)', padding: '10px 0' }}>
+                    Razza non trovata. Contattaci per un preventivo.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── 3a. Misura (se razza ha 2+ misure) ── */}
+      {selectedBreed && breedSizes.length > 1 && (
+        <div>
+          <p className="eyebrow mb-3">Misura del {animal === 'CAT' ? 'gatto' : 'cane'}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(breedSizes.length, 4)}, 1fr)`, gap: 10 }}>
+            {breedSizes.map((sz) => {
+              const sel = selectedSizeId === sz.id;
               return (
                 <button
-                  key={s.id}
+                  key={sz.id}
                   type="button"
-                  onClick={() => setServiceId(s.id)}
+                  onClick={() => setSelectedSizeId(sz.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '14px 18px',
+                    padding: '12px 8px',
                     borderRadius: 'var(--r-md)',
                     border: sel ? '2px solid var(--sage-800)' : '1px solid var(--cream-300)',
                     background: sel ? 'var(--sage-100)' : 'var(--cream-50)',
                     cursor: 'pointer',
                     transition: 'all var(--dur-fast) var(--ease-organic)',
-                    textAlign: 'left',
+                    textAlign: 'center',
                   }}
                 >
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 15, color: sel ? 'var(--sage-800)' : 'var(--ink-900)' }}>
-                      {s.name.replace(/ — (Cane|Gatto)$/, '')}
-                    </p>
-                    <p style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>{s.description}</p>
-                  </div>
-                  {sel && (
-                    <svg width="22" height="22" viewBox="0 0 44 44" fill="none" style={{ flexShrink: 0, marginLeft: 14 }}>
-                      <circle cx="22" cy="22" r="20" fill="var(--sage-800)" />
-                      <path d="M12 22l7 7 13-13" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
+                  <p style={{ fontSize: 13, fontWeight: 700, color: sel ? 'var(--sage-800)' : 'var(--ink-900)' }}>
+                    {sz.label}
+                  </p>
                 </button>
               );
             })}
@@ -257,83 +467,14 @@ export function ServiceStep({
         </div>
       )}
 
-      {/* ── 3. Razza (se cane) ── */}
-      {animal === 'DOG' && serviceId && (
-        <div ref={breedRef} style={{ scrollMarginTop: 16 }}>
-          <p className="eyebrow mb-3">Razza del cane <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-500)', fontSize: 11 }}>— prezzo per razza</span></p>
-          <input
-            ref={searchRef}
-            type="text"
-            className="input-cd"
-            placeholder="Cerca… es. Labrador, Maltese, Yorkshire"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ marginBottom: 8 }}
-          />
-          <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, paddingRight: 2 }}>
-            {filtered.map((breed) => {
-              const isSel = selectedBreed?.id === breed.id;
-              return (
-                <button
-                  key={breed.id}
-                  type="button"
-                  onClick={() => setSelectedBreed(breed)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--r-md)',
-                    border: isSel ? '1.5px solid var(--sage-800)' : '1px solid var(--cream-200)',
-                    background: isSel ? 'var(--sage-100)' : 'transparent',
-                    cursor: 'pointer',
-                    transition: 'all var(--dur-fast) var(--ease-organic)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontSize: 14, fontWeight: isSel ? 600 : 400, color: isSel ? 'var(--sage-800)' : 'var(--ink-800)', flex: 1, minWidth: 0 }}>
-                    {breed.name}
-                  </span>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: 'var(--brown-700)', whiteSpace: 'nowrap', marginLeft: 12 }}>
-                    <span>
-                      <span style={{ fontSize: 11, fontStyle: 'italic', marginRight: 3, opacity: 0.7 }}>da</span>
-                      <span style={{ fontSize: 15 }}>{breed.priceMin} €</span>
-                    </span>
-                    {serviceHasGroom && (() => {
-                      const isLong = breed.coatType === 'LONG';
-                      const isMixed = breed.coatType === 'MIXED';
-                      const minC = isLong ? selectedService?.priceCoatLongMinCents : selectedService?.priceCoatShortMinCents;
-                      if (minC == null) return null;
-                      const min = Math.round(minC / 100);
-                      return (
-                        <span style={{ fontSize: 11, fontStyle: 'italic', opacity: 0.75, color: 'var(--ink-600)' }}>
-                          + tosat. {isMixed ? '?' : ''}da {min} €
-                        </span>
-                      );
-                    })()}
-                  </span>
-                </button>
-              );
-            })}
-            {filtered.length === 0 && (
-              <p style={{ fontSize: 13, color: 'var(--ink-400)', padding: '10px 0' }}>
-                Razza non trovata. Contattaci per un preventivo.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── 3c. Tipo pelo (solo Meticcio/MIXED) ── */}
-      {showCoatPicker && selectedBreed && (
+      {/* ── 3b. Tipo pelo (solo MIXED) — dopo misura, prima dei servizi ── */}
+      {showCoatPicker && selectedBreed && (!hasSizes || breedSizes.length <= 1 || !!selectedSizeId) && (
         <div>
-          <p className="eyebrow mb-3">Tipo di pelo del cane</p>
+          <p className="eyebrow mb-3">Tipo di pelo</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {(['SHORT', 'LONG'] as const).map((coat) => {
               const sel = mixedCoatChoice === coat;
               const label = coat === 'SHORT' ? 'Pelo corto' : 'Pelo lungo';
-              const minC = coat === 'SHORT' ? selectedService?.priceCoatShortMinCents : selectedService?.priceCoatLongMinCents;
-              const rangeText = minC != null
-                ? `da ${Math.round(minC / 100)} €`
-                : '—';
               return (
                 <button
                   key={coat}
@@ -346,37 +487,141 @@ export function ServiceStep({
                     background: sel ? 'var(--sage-100)' : 'var(--cream-50)',
                     cursor: 'pointer',
                     transition: 'all var(--dur-fast) var(--ease-organic)',
-                    textAlign: 'left',
+                    textAlign: 'center',
                   }}
                 >
                   <p style={{ fontSize: 14, fontWeight: 700, color: sel ? 'var(--sage-800)' : 'var(--ink-900)' }}>
                     {label}
                   </p>
-                  <p style={{ fontSize: 13, fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: 'var(--brown-700)', marginTop: 4 }}>
-                    {serviceHasBath ? '+' : ''}{rangeText}
-                  </p>
                 </button>
               );
             })}
           </div>
-          <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6 }}>
-            Prezzo finale concordato in negozio.
-          </p>
         </div>
       )}
 
-      {/* ── 3b. Gatto prezzo ── */}
-      {animal === 'CAT' && serviceId && catPrice && (
-        <div ref={breedRef} style={{ background: 'var(--sage-100)', borderRadius: 'var(--r-md)', padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', scrollMarginTop: 16 }}>
-          <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--sage-800)' }}>Gatto</p>
-          <p style={{ fontSize: 24, fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)' }}>
-            <span style={{ fontSize: 14, fontStyle: 'italic', opacity: 0.7, marginRight: 4 }}>da</span>{catPrice.min} €
+      {/* ── 4. Servizi (prezzi per razza/misura) ── */}
+      {animal && selectedBreed && !sizeRequiredButMissing && (primaryService || addonServices.length > 0) && (
+        <div ref={servicesRef} style={{ scrollMarginTop: 16 }}>
+          <p className="eyebrow mb-3">
+            {primaryService ? `Servizio per ${selectedBreed.name}` : `Servizi per ${selectedBreed.name}`}
           </p>
+
+          {/* Primary auto-incluso con prezzo (solo se isDefault esiste) */}
+          {primaryService && (() => {
+            const p = priceForService(
+              primaryService,
+              lookupCells(selectedBreed.id, primaryService.id),
+              selectedSizeId,
+              effectiveCoat,
+              isMixed,
+            );
+            return (
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '14px 18px',
+                  borderRadius: 'var(--r-md)',
+                  border: '1.5px solid var(--sage-800)',
+                  background: 'var(--sage-100)',
+                  marginBottom: 12,
+                }}
+              >
+                <span style={{ fontSize: 24 }}>🛁</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 700, fontSize: 15, color: 'var(--sage-800)' }}>
+                    {primaryService.displayName || primaryService.name}
+                  </p>
+                  {primaryService.description && (
+                    <p style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>
+                      {primaryService.description}
+                    </p>
+                  )}
+                </div>
+                <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap' }}>
+                  {p > 0 ? (
+                    <>
+                      <span style={{ fontSize: 11, fontStyle: 'italic', marginRight: 3, opacity: 0.7 }}>da</span>
+                      <span style={{ fontSize: 18 }}>{p} €</span>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>—</span>
+                  )}
+                </span>
+              </div>
+            );
+          })()}
+
+          {addonServices.length > 0 && (
+            <>
+              {primaryService && (
+                <p className="eyebrow mb-3" style={{ marginTop: 8 }}>Aggiungi al servizio</p>
+              )}
+              {!primaryService && (
+                <p className="eyebrow mb-3" style={{ marginTop: 8 }}>Scegli uno o più servizi</p>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {addonServices.map((svc) => {
+                  const sel = selectedAddonIds.has(svc.id);
+                  const p = priceForService(svc, lookupCells(selectedBreed.id, svc.id), selectedSizeId, effectiveCoat, isMixed);
+                  return (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      onClick={() => toggleAddon(svc.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 14,
+                        padding: '14px 18px',
+                        borderRadius: 'var(--r-md)',
+                        border: sel ? '2px solid var(--sage-800)' : '1px solid var(--cream-300)',
+                        background: sel ? 'var(--sage-100)' : 'var(--cream-50)',
+                        cursor: 'pointer',
+                        transition: 'all var(--dur-fast) var(--ease-organic)',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: 700, fontSize: 15, color: sel ? 'var(--sage-800)' : 'var(--ink-900)' }}>
+                          {svc.displayName || svc.name}
+                        </p>
+                        {svc.description && (
+                          <p style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>{svc.description}</p>
+                        )}
+                      </div>
+                      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap', marginRight: sel ? 6 : 0 }}>
+                        {p > 0 ? (
+                          <>
+                            <span style={{ fontSize: 11, fontStyle: 'italic', marginRight: 3, opacity: 0.7 }}>+</span>
+                            <span style={{ fontSize: 16 }}>{p} €</span>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>—</span>
+                        )}
+                      </span>
+                      {sel && (
+                        <svg width="22" height="22" viewBox="0 0 44 44" fill="none" style={{ flexShrink: 0 }}>
+                          <circle cx="22" cy="22" r="20" fill="var(--sage-800)" />
+                          <path d="M12 22l7 7 13-13" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* ── 4. Extra (dopo che tutto è scelto) ── */}
-      {animal && serviceId && (animal === 'CAT' || selectedBreed) && (
+      {animal && selectedBreed && !primaryService && addonServices.length === 0 && (
+        <div className="rounded-md border p-4 text-sm" style={{ borderColor: 'var(--cream-300)', background: 'var(--cream-50)' }}>
+          Nessun servizio configurato per {animal === 'CAT' ? 'gatti' : 'cani'}.
+          Contattaci per maggiori informazioni.
+        </div>
+      )}
+
+      {/* ── 4. Extra ── */}
+      {animal && selectedBreed && (primaryService || selectedAddonIds.size > 0) && visibleExtras.length > 0 && (
         <div>
           <p className="eyebrow mb-3">Servizi extra</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -417,7 +662,7 @@ export function ServiceStep({
       )}
 
       {/* ── Sempre incluso ── */}
-      {animal && serviceId && (
+      {animal && selectedBreed && (primaryService || selectedAddonIds.size > 0) && (
         <div
           style={{
             borderRadius: 'var(--r-md)',
@@ -448,7 +693,7 @@ export function ServiceStep({
       )}
 
       {/* ── CTA ── */}
-      {animal && serviceId && (
+      {animal && selectedBreed && (primaryService || addonServices.length > 0) && (
         <div>
           {totalPrice && (
             <>
@@ -473,7 +718,13 @@ export function ServiceStep({
             className="btn-primary justify-center"
             style={{ width: '100%', fontSize: 16, padding: '16px 28px', opacity: canContinue ? 1 : 0.4, cursor: canContinue ? 'pointer' : 'not-allowed' }}
           >
-            {!canContinue && animal === 'DOG' ? 'Seleziona la razza per continuare' : 'Scegli data e orario →'}
+            {!selectedBreed
+              ? 'Seleziona la razza per continuare'
+              : sizeRequiredButMissing
+                ? 'Seleziona la misura per continuare'
+                : !primaryService && selectedAddonIds.size === 0
+                  ? 'Seleziona almeno un servizio'
+                  : 'Scegli data e orario →'}
           </button>
         </div>
       )}

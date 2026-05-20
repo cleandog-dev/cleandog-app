@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { logoutAction } from '@/lib/auth-actions';
 import { Logo } from '@/components/Logo';
 import { AdminNavDesktop, AdminNavMobile } from '@/components/admin/AdminNav';
+import { PushSubscribe } from '@/components/PushSubscribe';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <AdminNavMobile />
         </div>
       </header>
-      <main className="mx-auto max-w-screen-lg px-3 py-4 sm:px-5 sm:py-8">{children}</main>
+      <main className="mx-auto max-w-screen-lg px-3 py-4 sm:px-5 sm:py-8">
+        <div className="mb-4">
+          <PushSubscribe scope="ADMIN" />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

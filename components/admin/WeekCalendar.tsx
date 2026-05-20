@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { toZonedTime } from 'date-fns-tz';
@@ -20,18 +20,10 @@ const statusColor: Record<BookingStatus, string> = {
   NO_SHOW: 'bg-red-100 text-red-700 border-red-200 opacity-60',
 };
 
-const statusLabel: Record<BookingStatus, string> = {
-  PENDING: 'Attesa',
-  CONFIRMED: 'Conferm.',
-  COMPLETED: 'Compl.',
-  CANCELLED: 'Annull.',
-  NO_SHOW: 'No-show',
-};
-
 // Opening hours for visual guide (minutes from midnight)
 const OPEN_FROM = 9 * 60;   // 09:00
 const OPEN_TO = 18 * 60;    // 18:00
-const HOUR_HEIGHT_PX = 44;  // px per hour
+const HOUR_HEIGHT_PX = 48;  // px per hour (used for both desktop + mobile)
 const START_HOUR = 8;       // display from 08:00
 const END_HOUR = 19;        // display to 19:00
 const TOTAL_HOURS = END_HOUR - START_HOUR;
@@ -59,6 +51,16 @@ export function WeekCalendar({
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selected, setSelected] = useState<Row | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (mobileView !== 'grid' || !scrollRef.current) return;
+    // Scroll to current hour (or 9:00 if outside hours)
+    const now = toZonedTime(new Date(), APP_TIMEZONE);
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const target = nowMin >= OPEN_FROM && nowMin <= OPEN_TO ? nowMin - 30 : OPEN_FROM;
+    scrollRef.current.scrollTop = Math.max(0, minuteToTop(target));
+  }, [mobileView]);
 
   const today = new Date();
   const baseWeek = weekOffset === 0
@@ -140,7 +142,7 @@ export function WeekCalendar({
                         <span className="flex-1 min-w-0">
                           <span className="font-medium">{animalLabel(b)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">
-                            · {b.service.name.split('—')[0].trim()}
+                            · {(b.service.name.split('—')[0] ?? '').trim()}
                           </span>
                         </span>
                         <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
@@ -159,65 +161,68 @@ export function WeekCalendar({
         })}
       </div>
 
-      {/* Time-grid calendar (Calendario view) */}
-      <div className={`overflow-x-auto rounded-xl border bg-white shadow-sm ${mobileView === 'grid' ? 'block' : 'hidden'}`}>
-        <div className="min-w-[600px]">
-          {/* Day headers */}
-          <div className="grid border-b" style={{ gridTemplateColumns: '48px repeat(6, 1fr)' }}>
-            <div className="border-r py-1" />
-            {days.map((day) => {
-              const isToday = isSameDay(day, today);
-              const count = bookings.filter(
-                (b) =>
-                  isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
-                  ['CONFIRMED', 'PENDING'].includes(b.status),
-              ).length;
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`flex items-center justify-center gap-1.5 border-r py-1 text-center text-xs ${isToday ? 'bg-accent/40' : ''}`}
-                >
-                  <span className="font-medium uppercase text-muted-foreground">
-                    {format(day, 'EEE', { locale: it })}
+      {/* Time-grid calendar (Calendario view) — mobile-first Google Calendar style */}
+      <div className={`rounded-xl border bg-white shadow-sm ${mobileView === 'grid' ? 'block' : 'hidden'}`}>
+        {/* Sticky day header */}
+        <div
+          className="grid border-b bg-white"
+          style={{ gridTemplateColumns: '32px repeat(6, minmax(0, 1fr))' }}
+        >
+          <div className="border-r" />
+          {days.map((day) => {
+            const isToday = isSameDay(day, today);
+            const count = bookings.filter(
+              (b) =>
+                isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
+                ['CONFIRMED', 'PENDING'].includes(b.status),
+            ).length;
+            return (
+              <div
+                key={day.toISOString()}
+                className={`flex flex-col items-center justify-center gap-0.5 border-r py-1.5 text-center ${isToday ? 'bg-accent/40' : ''}`}
+              >
+                <span className="text-[10px] font-medium uppercase leading-none text-muted-foreground">
+                  {format(day, 'EEEEE', { locale: it })}
+                </span>
+                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
+                  isToday ? 'bg-primary text-primary-foreground' : ''
+                }`}>
+                  {format(day, 'd')}
+                </span>
+                {count > 0 && (
+                  <span className="text-[9px] font-semibold leading-none text-primary">
+                    {count}
                   </span>
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold ${
-                    isToday ? 'bg-primary text-primary-foreground' : ''
-                  }`}>
-                    {format(day, 'd')}
-                  </span>
-                  {count > 0 && (
-                    <span className="text-[10px] font-medium text-primary">
-                      ({count})
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-          {/* Time grid */}
+        {/* Scrollable time grid */}
+        <div ref={scrollRef} className="max-h-[70vh] overflow-y-auto">
           <div
             className="relative grid"
             style={{
-              gridTemplateColumns: '48px repeat(6, 1fr)',
+              gridTemplateColumns: '32px repeat(6, minmax(0, 1fr))',
               height: `${TOTAL_HOURS * HOUR_HEIGHT_PX}px`,
             }}
           >
             {/* Hour labels */}
-            <div className="relative border-r">
+            <div className="relative border-r bg-white">
               {hours.map((h) => (
                 <div
                   key={h}
-                  className="absolute right-1 -translate-y-2 text-[10px] text-muted-foreground"
+                  className="absolute right-1 -translate-y-1.5 text-[9px] leading-none text-muted-foreground"
                   style={{ top: `${(h - START_HOUR) * HOUR_HEIGHT_PX}px` }}
                 >
-                  {h}:00
+                  {h}
                 </div>
               ))}
             </div>
 
             {/* Day columns */}
-            {days.map((day, di) => {
+            {days.map((day) => {
               const dayBookings = bookings.filter((b) =>
                 isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day),
               );
@@ -256,7 +261,7 @@ export function WeekCalendar({
                         className="absolute z-10 w-full border-t-2 border-red-400"
                         style={{ top: `${minuteToTop(nowMin)}px` }}
                       >
-                        <div className="h-2 w-2 -translate-y-1 rounded-full bg-red-400" />
+                        <div className="h-2 w-2 -translate-y-1 -translate-x-1 rounded-full bg-red-400" />
                       </div>
                     );
                   })()}
@@ -266,20 +271,22 @@ export function WeekCalendar({
                     const startMin = toLocalMinutes(b.startsAt);
                     const endMin = toLocalMinutes(b.endsAt);
                     const top = minuteToTop(startMin);
-                    const height = Math.max(durationToHeight(endMin - startMin), 20);
+                    const height = Math.max(durationToHeight(endMin - startMin), 18);
                     return (
                       <button
                         key={b.id}
                         type="button"
                         onClick={() => setSelected(selected?.id === b.id ? null : b)}
-                        className={`absolute left-0.5 right-0.5 overflow-hidden rounded border px-1 py-0.5 text-left text-[10px] transition-shadow hover:shadow-md ${statusColor[b.status]}`}
+                        className={`absolute left-0.5 right-0.5 overflow-hidden rounded border px-1 py-0.5 text-left leading-tight transition-shadow hover:shadow-md ${statusColor[b.status]}`}
                         style={{ top: `${top}px`, height: `${height}px` }}
                       >
-                        <div className="font-semibold leading-tight">
-                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')} {animalLabel(b)}
+                        <div className="text-[9px] font-semibold sm:text-[10px]">
+                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')}
                         </div>
-                        {height > 30 && (
-                          <div className="truncate opacity-80">{b.service.name.split('—')[0]}</div>
+                        {height > 26 && (
+                          <div className="truncate text-[9px] opacity-80 sm:text-[10px]">
+                            {animalLabel(b)}
+                          </div>
                         )}
                       </button>
                     );

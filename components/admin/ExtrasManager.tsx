@@ -17,6 +17,7 @@ import {
 import { upsertExtraAction, deleteExtraAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { formatEUR } from '@/lib/utils';
+import { NumericInput } from '@/components/ui/numeric-input';
 
 type Draft = {
   name: string;
@@ -163,21 +164,21 @@ export function ExtrasManager({ extras }: { extras: Extra[] }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Prezzo (€)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={(draft.priceCents / 100).toFixed(2)}
-                  onChange={(e) =>
-                    setDraft({ ...draft, priceCents: Math.round(Number(e.target.value) * 100) })
+                <NumericInput
+                  value={draft.priceCents > 0 ? draft.priceCents / 100 : null}
+                  allowDecimal
+                  placeholder="0"
+                  onChange={(n) =>
+                    setDraft({ ...draft, priceCents: n == null ? 0 : Math.round(n * 100) })
                   }
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>Ordine</Label>
-                <Input
-                  type="number"
-                  value={draft.sortOrder}
-                  onChange={(e) => setDraft({ ...draft, sortOrder: Number(e.target.value) })}
+                <NumericInput
+                  value={draft.sortOrder > 0 ? draft.sortOrder : null}
+                  placeholder="0"
+                  onChange={(n) => setDraft({ ...draft, sortOrder: n ?? 0 })}
                 />
               </div>
             </div>

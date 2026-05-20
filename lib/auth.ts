@@ -14,12 +14,8 @@ declare module 'next-auth' {
   }
 }
 
-declare module 'next-auth/jwt' {
-  interface JWT {
-    id?: string;
-    role?: 'ADMIN' | 'STAFF';
-  }
-}
+// NOTE: in next-auth v5 beta the JWT type augmentation lives differently; we cast
+// token.id / token.role inline in auth.config.ts where needed.
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,

@@ -67,12 +67,7 @@ export function NewBookingDialog({
   );
 
   const selectedBreed = breeds.find((b) => b.name === draft.dogBreed) ?? null;
-  const selectedService = services.find((s) => s.id === draft.serviceId) ?? null;
-  const showCoatPicker =
-    draft.animalType === 'DOG' &&
-    !!selectedService &&
-    /tosatura/i.test(selectedService.name) &&
-    selectedBreed?.coatType === 'MIXED';
+  const showCoatPicker = selectedBreed?.coatType === 'MIXED';
 
   const [warning, setWarning] = useState<'OVERLAP' | 'CLOSED' | null>(null);
   const [slots, setSlots] = useState<DaySlot[]>([]);
@@ -108,7 +103,7 @@ export function NewBookingDialog({
       const utcISO = fromZonedTime(draft.startsAt, APP_TIMEZONE).toISOString();
       const r = await adminCreateBookingAction({
         ...draft,
-        dogBreed: draft.animalType === 'DOG' ? draft.dogBreed : '',
+        dogBreed: draft.dogBreed,
         coatChoice: showCoatPicker ? (draft.coatChoice || undefined) : undefined,
         startsAt: utcISO,
         forceOverlap: force,
@@ -145,15 +140,10 @@ export function NewBookingDialog({
                 <Input value={draft.customerName} onChange={(e) => setDraft({ ...draft, customerName: e.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Telefono <span className="text-xs font-normal text-muted-foreground">(opzionale)</span></Label>
+                <Label>Telefono</Label>
                 <Input value={draft.customerPhone} onChange={(e) => setDraft({ ...draft, customerPhone: e.target.value })} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Email <span className="text-xs font-normal text-muted-foreground">(opzionale)</span></Label>
-              <Input type="email" value={draft.customerEmail} onChange={(e) => setDraft({ ...draft, customerEmail: e.target.value })} />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Animale</Label>
@@ -172,13 +162,12 @@ export function NewBookingDialog({
               </div>
             </div>
 
-            {draft.animalType === 'DOG' && (
-              <BreedPicker
-                breeds={filteredBreeds}
-                value={draft.dogBreed}
-                onChange={(name) => setDraft({ ...draft, dogBreed: name, coatChoice: '' })}
-              />
-            )}
+            <BreedPicker
+              breeds={filteredBreeds}
+              value={draft.dogBreed}
+              onChange={(name) => setDraft({ ...draft, dogBreed: name, coatChoice: '' })}
+              animalLabel={draft.animalType === 'CAT' ? 'gatto' : 'cane'}
+            />
 
             <div className="space-y-1.5">
               <Label>Servizio</Label>
@@ -338,10 +327,12 @@ function BreedPicker({
   breeds,
   value,
   onChange,
+  animalLabel = 'cane',
 }: {
   breeds: BreedEntry[];
   value: string;
   onChange: (name: string) => void;
+  animalLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -349,7 +340,7 @@ function BreedPicker({
 
   return (
     <div className="space-y-1.5">
-      <Label>Razza</Label>
+      <Label>Razza ({animalLabel})</Label>
       <Button
         type="button"
         variant="outline"
