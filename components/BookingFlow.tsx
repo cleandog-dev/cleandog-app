@@ -319,7 +319,7 @@ function SuccessStep({ confirmedId, meta, onReset }: {
           <div>
             <p className="text-sm font-semibold" style={{ color: 'var(--ink-900)' }}>Promemoria automatici attivi</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ink-500)' }}>
-              Riceverai un promemoria via email prima dell&apos;appuntamento.
+              Se hai abilitato le notifiche, riceverai un promemoria 1h prima dell&apos;appuntamento.
             </p>
           </div>
         </div>
@@ -329,9 +329,14 @@ function SuccessStep({ confirmedId, meta, onReset }: {
         #{confirmedId.slice(0, 8).toUpperCase()}
       </p>
 
-      <button type="button" onClick={onReset} className="btn-ghost text-sm" style={{ color: 'var(--ink-500)' }}>
-        Prenota un altro appuntamento
-      </button>
+      <div className="flex flex-col items-center gap-2">
+        <button type="button" onClick={onReset} className="btn-ghost text-sm" style={{ color: 'var(--ink-500)' }}>
+          Prenota un altro appuntamento
+        </button>
+        <a href="/cancella" className="text-xs underline" style={{ color: 'var(--ink-300)' }}>
+          Devi cancellare? Vai qui
+        </a>
+      </div>
     </div>
   );
 }
