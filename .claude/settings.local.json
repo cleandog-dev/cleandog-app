@@ -20,7 +20,8 @@
       "Bash(mkdir \"prisma/migrations/20260518150000_booking_addon_items\")",
       "Bash(npx prisma *)",
       "Bash(npx tsc *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(npx --yes @next/codemod@canary upgrade 15.1.6 --verbose)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Giulia\\Desktop\\Cleandog APP\\prisma\\migrations"

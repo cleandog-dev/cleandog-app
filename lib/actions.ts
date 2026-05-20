@@ -26,6 +26,9 @@ import {
   buildBookingCreatedAdminPayload,
   buildBookingConfirmedClientPayload,
   buildBookingCancelledAdminPayload,
+  buildBookingCancelledClientPayload,
+  buildBookingRescheduledClientPayload,
+  buildBookingStatusAdminPayload,
 } from '@/lib/notify-builders';
 import { priceBooking } from '@/lib/pricing';
 
@@ -355,11 +358,30 @@ export async function updateBookingStatusAction(
   const parsed = BookingStatusUpdateSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: 'Input non valido' };
 
-  await prisma.booking.update({
+  const updated = await prisma.booking.update({
     where: { id: parsed.data.bookingId },
     data: { status: parsed.data.status },
+    include: { service: true },
   });
   revalidatePath('/admin/dashboard');
+
+  // Notify admin on every status change
+  pushToAdmins(
+    'BOOKING_EDITED',
+    buildBookingStatusAdminPayload(updated, updated.service.name, parsed.data.status),
+    updated.id,
+  ).catch((e) => console.error('Admin push failed:', e));
+
+  // Notify client when cancelled
+  if (parsed.data.status === 'CANCELLED' && updated.customerPhone) {
+    pushToClientPhone(
+      updated.customerPhone,
+      'BOOKING_CANCELLED',
+      buildBookingCancelledClientPayload(updated, updated.service.name),
+      updated.id,
+    ).catch((e) => console.error('Client push failed:', e));
+  }
+
   return { ok: true, data: null };
 }
 
@@ -427,6 +449,18 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
   }
 
   revalidatePath('/admin/dashboard');
+
+  // Notify client if the time actually changed
+  if (booking.customerPhone && startsAt.getTime() !== booking.startsAt.getTime()) {
+    const updatedBooking = { ...booking, startsAt };
+    pushToClientPhone(
+      booking.customerPhone,
+      'BOOKING_EDITED',
+      buildBookingRescheduledClientPayload(updatedBooking, booking.service.name, booking.startsAt),
+      booking.id,
+    ).catch((e) => console.error('Client push failed:', e));
+  }
+
   return { ok: true, data: null };
 }
 
@@ -447,6 +481,14 @@ export async function deleteBookingAction(bookingId: string): Promise<ActionResu
       buildBookingCancelledAdminPayload(booking, booking.service.name),
       booking.id,
     ).catch((e) => console.error('Admin push failed:', e));
+    if (booking.customerPhone) {
+      pushToClientPhone(
+        booking.customerPhone,
+        'BOOKING_CANCELLED',
+        buildBookingCancelledClientPayload(booking, booking.service.name),
+        booking.id,
+      ).catch((e) => console.error('Client push failed:', e));
+    }
   }
 
   return { ok: true, data: null };
@@ -1062,5 +1104,111 @@ export async function setSlotStepMinAction(min: number): Promise<ActionResult> {
   });
   revalidatePath('/admin/hours');
   revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Public (no auth): client lookup own upcoming bookings by phone ─
+// Rate-limited. Returns minimal info (id, startsAt, serviceName, dogName, status).
+export type ClientBookingLite = {
+  id: string;
+  startsAt: string; // ISO
+  endsAt: string;
+  serviceName: string;
+  dogName: string;
+  status: string;
+  priceCents: number;
+};
+
+function normalizePhone(p: string): string {
+  return p.replace(/[\s\-().]/g, '');
+}
+
+export async function lookupBookingsByPhoneAction(
+  phone: string,
+): Promise<ActionResult<{ bookings: ClientBookingLite[] }>> {
+  const ip = await getClientIp();
+  const rl = rateLimit({ key: `lookup:${ip}`, limit: 10, windowMs: 60_000 });
+  if (!rl.ok) return { ok: false, error: 'Troppe richieste, riprova tra poco.' };
+
+  const clean = normalizePhone(phone ?? '');
+  if (clean.length < 6) return { ok: false, error: 'Numero non valido' };
+
+  const now = new Date();
+  const bookings = await prisma.booking.findMany({
+    where: {
+      customerPhone: { contains: clean.slice(-9) }, // last 9 digits, tolerates +39 prefix variations
+      startsAt: { gte: now },
+      status: { in: ['PENDING', 'CONFIRMED'] },
+    },
+    include: { service: true },
+    orderBy: { startsAt: 'asc' },
+    take: 20,
+  });
+
+  return {
+    ok: true,
+    data: {
+      bookings: bookings.map((b) => ({
+        id: b.id,
+        startsAt: b.startsAt.toISOString(),
+        endsAt: b.endsAt.toISOString(),
+        serviceName: b.serviceName ?? b.service.name,
+        dogName: b.dogName,
+        status: b.status,
+        priceCents: b.priceCents,
+      })),
+    },
+  };
+}
+
+// ── Public (no auth): client cancels their own booking by id + phone match ─
+export async function clientCancelBookingAction(input: {
+  bookingId: string;
+  phone: string;
+}): Promise<ActionResult> {
+  const ip = await getClientIp();
+  const rl = rateLimit({ key: `cancel:${ip}`, limit: 10, windowMs: 60_000 });
+  if (!rl.ok) return { ok: false, error: 'Troppe richieste, riprova tra poco.' };
+
+  const clean = normalizePhone(input.phone ?? '');
+  if (clean.length < 6 || !input.bookingId) return { ok: false, error: 'Dati non validi' };
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: input.bookingId },
+    include: { service: true },
+  });
+  if (!booking) return { ok: false, error: 'Prenotazione non trovata' };
+
+  // Phone match (compare last 9 digits, normalized)
+  if (normalizePhone(booking.customerPhone).slice(-9) !== clean.slice(-9)) {
+    return { ok: false, error: 'Numero non corrispondente' };
+  }
+  if (booking.status === 'CANCELLED') return { ok: false, error: 'Già cancellata' };
+  if (booking.startsAt.getTime() <= Date.now()) {
+    return { ok: false, error: 'Non puoi cancellare una prenotazione passata. Contattaci.' };
+  }
+
+  await prisma.booking.update({
+    where: { id: booking.id },
+    data: { status: 'CANCELLED' },
+  });
+  revalidatePath('/admin/dashboard');
+
+  // Notify admin
+  pushToAdmins(
+    'BOOKING_CANCELLED',
+    buildBookingCancelledAdminPayload(booking, booking.service.name),
+    booking.id,
+  ).catch((e) => console.error('Admin push failed:', e));
+  // Confirm to client
+  if (booking.customerPhone) {
+    pushToClientPhone(
+      booking.customerPhone,
+      'BOOKING_CANCELLED',
+      buildBookingCancelledClientPayload(booking, booking.service.name),
+      booking.id,
+    ).catch((e) => console.error('Client push failed:', e));
+  }
+
   return { ok: true, data: null };
 }

@@ -286,6 +286,8 @@ export default async function HomePage() {
         <p className="mt-2">
           <Link href="/privacy" className="underline">Privacy</Link>
           {' · '}
+          <Link href="/cancella" className="underline">Cancella prenotazione</Link>
+          {' · '}
           <Link href="/login" className="underline">Area riservata</Link>
         </p>
       </footer>

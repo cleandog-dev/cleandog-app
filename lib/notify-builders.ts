@@ -79,3 +79,48 @@ export function buildReminderClientPayload(b: BookingLike, serviceName: string):
     tag: `client-reminder-${b.id}`,
   };
 }
+
+export function buildBookingCancelledClientPayload(b: BookingLike, serviceName: string): PushPayload {
+  return {
+    title: '❌ Prenotazione cancellata',
+    body: `${cleanServiceName(serviceName)} · ${fmtWhen(b.startsAt)}`,
+    url: '/',
+    tag: `client-cancel-${b.id}`,
+    requireInteraction: true,
+  };
+}
+
+export function buildBookingRescheduledClientPayload(
+  b: BookingLike,
+  serviceName: string,
+  oldStartsAt: Date,
+): PushPayload {
+  return {
+    title: '📅 Prenotazione spostata',
+    body: `${cleanServiceName(serviceName)}: da ${fmtWhen(oldStartsAt)} a ${fmtWhen(b.startsAt)}`,
+    url: '/',
+    tag: `client-reschedule-${b.id}`,
+    requireInteraction: true,
+  };
+}
+
+export function buildBookingStatusAdminPayload(
+  b: BookingLike,
+  serviceName: string,
+  status: 'CONFIRMED' | 'CANCELLED' | 'NO_SHOW' | 'COMPLETED' | 'PENDING',
+): PushPayload {
+  const labels: Record<typeof status, string> = {
+    CONFIRMED: '✅ Confermata',
+    CANCELLED: '❌ Cancellata',
+    NO_SHOW: '🚫 No-show',
+    COMPLETED: '✔️ Completata',
+    PENDING: '⏳ In attesa',
+  };
+  const animal = animalLabel(b);
+  return {
+    title: labels[status],
+    body: `${animal} · ${cleanServiceName(serviceName)} · ${fmtWhen(b.startsAt)} · ${b.customerName}`,
+    url: '/admin/dashboard',
+    tag: `status-${b.id}`,
+  };
+}

@@ -8,11 +8,12 @@ import { getAllBreedsAdmin } from '@/lib/breeds-server';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
 
-export default async function AdminDashboardPage({
-  searchParams,
-}: {
-  searchParams: { range?: string; view?: string };
-}) {
+export default async function AdminDashboardPage(
+  props: {
+    searchParams: Promise<{ range?: string; view?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const now = new Date();
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
