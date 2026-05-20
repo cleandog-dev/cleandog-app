@@ -194,7 +194,24 @@ export function BookingFlow({
           />
         )}
         {step === 3 && selection && slotISO && (
-          <CustomerStep animalLabel={selection.animalType === 'CAT' ? 'gatto' : 'cane'} isSubmitting={isPending} onBack={() => setStep(2)} onSubmit={submit} />
+          <CustomerStep
+            animalLabel={selection.animalType === 'CAT' ? 'gatto' : 'cane'}
+            summary={{
+              serviceName: selection.serviceName.replace(/ — (Cane|Gatto)$/, ''),
+              breed: selection.breed,
+              sizeLabel: selection.sizeLabel,
+              coatChoice: selection.coatChoice,
+              addonNames: selection.addonServiceIds
+                .map((id) => services.find((s) => s.id === id))
+                .filter((s): s is typeof services[number] => !!s)
+                .map((s) => (s.displayName ?? s.name).replace(/ — (Cane|Gatto)$/, '')),
+              totalCents: selection.priceMax * 100,
+              startsAtISO: slotISO,
+            }}
+            isSubmitting={isPending}
+            onBack={() => setStep(2)}
+            onSubmit={submit}
+          />
         )}
         {step === 4 && confirmedId && (
           <SuccessStep confirmedId={confirmedId} meta={bookingMeta} onReset={reset} />
