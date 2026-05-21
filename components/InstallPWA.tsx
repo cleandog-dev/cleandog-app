@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;
@@ -50,36 +51,77 @@ export function InstallPWA() {
 
   if (installed || dismissed) return null;
 
-  // Android / desktop with native prompt available
-  if (deferredPrompt) {
-    return (
-      <div className="sticky top-0 z-40 flex items-center gap-3 border-b px-4 py-2.5 shadow-sm" style={{ background: 'var(--sage-100)', borderColor: 'var(--sage-200)' }}>
-        <div className="text-xl">⤓</div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold" style={{ color: 'var(--sage-800)' }}>Installa CleanDOG</p>
-          <p className="text-xs" style={{ color: 'var(--ink-500)' }}>Accedi più veloce, senza passare dal browser</p>
-        </div>
-        <button
-          className="rounded-md px-3 py-1.5 text-xs font-medium text-white flex-shrink-0"
-          style={{ background: 'var(--sage-800)' }}
-          onClick={async () => {
-            await deferredPrompt.prompt();
-            const choice = await deferredPrompt.userChoice;
-            if (choice.outcome === 'dismissed') setDismissed(true);
-            setDeferredPrompt(null);
-          }}
-        >
-          Installa
-        </button>
+  // Shared card chrome — Smart App Banner style, CleanDOG palette
+  const Banner = ({
+    title,
+    tagline,
+    cta,
+    onCta,
+    ctaDisabled,
+  }: {
+    title: string;
+    tagline: string;
+    cta: string;
+    onCta: () => void | Promise<void>;
+    ctaDisabled?: boolean;
+  }) => (
+    <div className="sticky top-2 z-40 mx-2">
+      <div
+        className="flex items-center gap-3 rounded-2xl bg-white px-3 py-2.5 shadow-lg"
+        style={{ border: '1px solid var(--cream-300)' }}
+      >
         <button
           aria-label="Chiudi"
-          className="text-lg leading-none px-1 flex-shrink-0"
-          style={{ color: 'var(--ink-500)' }}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-base leading-none flex-shrink-0"
+          style={{ background: 'var(--cream-100)', color: 'var(--ink-500)' }}
           onClick={() => setDismissed(true)}
         >
           ×
         </button>
+        <div
+          className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl"
+          style={{ background: 'var(--sage-100)' }}
+        >
+          <Image src="/icon" alt="CleanDOG" width={48} height={48} className="h-full w-full object-cover" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="truncate text-[15px] font-semibold leading-tight" style={{ color: 'var(--ink-900)' }}>
+            {title}
+          </p>
+          <p className="truncate text-[12px] leading-tight mt-0.5" style={{ color: 'var(--ink-500)' }}>
+            {tagline}
+          </p>
+          <p className="truncate text-[11px] leading-tight mt-0.5" style={{ color: 'var(--ink-300)' }}>
+            🐾 Toelettatura · Messina · Gratis
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={ctaDisabled}
+          onClick={onCta}
+          className="flex-shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+          style={{ background: 'var(--sage-800)' }}
+        >
+          {cta}
+        </button>
       </div>
+    </div>
+  );
+
+  // Android / desktop with native prompt available
+  if (deferredPrompt) {
+    return (
+      <Banner
+        title="CleanDOG"
+        tagline="Più veloce. Notifiche istantanee."
+        cta="Installa"
+        onCta={async () => {
+          await deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice.outcome === 'dismissed') setDismissed(true);
+          setDeferredPrompt(null);
+        }}
+      />
     );
   }
 
@@ -87,28 +129,12 @@ export function InstallPWA() {
   if (isIOS) {
     return (
       <>
-        <div className="sticky top-0 z-40 flex items-center gap-3 border-b px-4 py-2.5 shadow-sm" style={{ background: 'var(--sage-100)', borderColor: 'var(--sage-200)' }}>
-          <div className="text-xl">📱</div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold" style={{ color: 'var(--sage-800)' }}>Installa su iPhone</p>
-            <p className="text-xs" style={{ color: 'var(--ink-500)' }}>Tocca Condividi → Aggiungi a Home</p>
-          </div>
-          <button
-            className="rounded-md px-3 py-1.5 text-xs font-medium text-white flex-shrink-0"
-            style={{ background: 'var(--sage-800)' }}
-            onClick={() => setShowIOSHint(true)}
-          >
-            Come fare
-          </button>
-          <button
-            aria-label="Chiudi"
-            className="text-lg leading-none px-1 flex-shrink-0"
-            style={{ color: 'var(--ink-500)' }}
-            onClick={() => setDismissed(true)}
-          >
-            ×
-          </button>
-        </div>
+        <Banner
+          title="CleanDOG"
+          tagline="Aggiungi alla schermata Home"
+          cta="Apri"
+          onCta={() => setShowIOSHint(true)}
+        />
 
         {showIOSHint && (
           <div
