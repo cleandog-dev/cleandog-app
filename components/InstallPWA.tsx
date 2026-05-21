@@ -65,7 +65,7 @@ export function InstallPWA() {
     onCta: () => void | Promise<void>;
     ctaDisabled?: boolean;
   }) => (
-    <div className="sticky top-2 z-40 mx-2">
+    <div className="sticky top-2 z-40 mx-2 sm:mx-auto sm:max-w-md">
       <div
         className="flex items-center gap-3 rounded-2xl bg-white px-3 py-2.5 shadow-lg"
         style={{ border: '1px solid var(--cream-300)' }}
