@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <InstallPWA />
         {children}
         <Toaster />
