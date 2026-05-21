@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
+import { after } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import {
@@ -177,20 +178,24 @@ export async function createBookingAction(
     }
 
     // Push notification → admin (new booking)
-    pushToAdmins(
-      'BOOKING_CREATED',
-      buildBookingCreatedAdminPayload(booking, service.name),
-      booking.id,
-    ).catch((e) => console.error('Admin push failed:', e));
+    after(() =>
+      pushToAdmins(
+        'BOOKING_CREATED',
+        buildBookingCreatedAdminPayload(booking, service.name),
+        booking.id,
+      ).catch((e) => console.error('Admin push failed:', e)),
+    );
 
     // Push notification → client (booking confirmed, if already subscribed for phone)
     if (booking.customerPhone) {
-      pushToClientPhone(
-        booking.customerPhone,
-        'BOOKING_CONFIRMED',
-        buildBookingConfirmedClientPayload(booking, service.name),
-        booking.id,
-      ).catch((e) => console.error('Client push failed:', e));
+      after(() =>
+        pushToClientPhone(
+          booking.customerPhone,
+          'BOOKING_CONFIRMED',
+          buildBookingConfirmedClientPayload(booking, service.name),
+          booking.id,
+        ).catch((e) => console.error('Client push failed:', e)),
+      );
     }
 
     return { ok: true, data: { id: booking.id } };
@@ -321,11 +326,13 @@ export async function adminCreateBookingAction(
     revalidatePath('/admin/dashboard');
 
     // Push to admins also when admin creates a booking
-    pushToAdmins(
-      'BOOKING_CREATED',
-      buildBookingCreatedAdminPayload(booking, service.name),
-      booking.id,
-    ).catch((e) => console.error('Admin push failed:', e));
+    after(() =>
+      pushToAdmins(
+        'BOOKING_CREATED',
+        buildBookingCreatedAdminPayload(booking, service.name),
+        booking.id,
+      ).catch((e) => console.error('Admin push failed:', e)),
+    );
 
     return { ok: true, data: { id: booking.id } };
   } catch (e) {
@@ -366,20 +373,24 @@ export async function updateBookingStatusAction(
   revalidatePath('/admin/dashboard');
 
   // Notify admin on every status change
-  pushToAdmins(
-    'BOOKING_EDITED',
-    buildBookingStatusAdminPayload(updated, updated.service.name, parsed.data.status),
-    updated.id,
-  ).catch((e) => console.error('Admin push failed:', e));
+  after(() =>
+    pushToAdmins(
+      'BOOKING_EDITED',
+      buildBookingStatusAdminPayload(updated, updated.service.name, parsed.data.status),
+      updated.id,
+    ).catch((e) => console.error('Admin push failed:', e)),
+  );
 
   // Notify client when cancelled
   if (parsed.data.status === 'CANCELLED' && updated.customerPhone) {
-    pushToClientPhone(
-      updated.customerPhone,
-      'BOOKING_CANCELLED',
-      buildBookingCancelledClientPayload(updated, updated.service.name),
-      updated.id,
-    ).catch((e) => console.error('Client push failed:', e));
+    after(() =>
+      pushToClientPhone(
+        updated.customerPhone,
+        'BOOKING_CANCELLED',
+        buildBookingCancelledClientPayload(updated, updated.service.name),
+        updated.id,
+      ).catch((e) => console.error('Client push failed:', e)),
+    );
   }
 
   return { ok: true, data: null };
@@ -453,12 +464,14 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
   // Notify client if the time actually changed
   if (booking.customerPhone && startsAt.getTime() !== booking.startsAt.getTime()) {
     const updatedBooking = { ...booking, startsAt };
-    pushToClientPhone(
-      booking.customerPhone,
-      'BOOKING_EDITED',
-      buildBookingRescheduledClientPayload(updatedBooking, booking.service.name, booking.startsAt),
-      booking.id,
-    ).catch((e) => console.error('Client push failed:', e));
+    after(() =>
+      pushToClientPhone(
+        booking.customerPhone,
+        'BOOKING_EDITED',
+        buildBookingRescheduledClientPayload(updatedBooking, booking.service.name, booking.startsAt),
+        booking.id,
+      ).catch((e) => console.error('Client push failed:', e)),
+    );
   }
 
   return { ok: true, data: null };
@@ -476,18 +489,22 @@ export async function deleteBookingAction(bookingId: string): Promise<ActionResu
   revalidatePath('/admin/dashboard');
 
   if (booking) {
-    pushToAdmins(
-      'BOOKING_CANCELLED',
-      buildBookingCancelledAdminPayload(booking, booking.service.name),
-      booking.id,
-    ).catch((e) => console.error('Admin push failed:', e));
-    if (booking.customerPhone) {
-      pushToClientPhone(
-        booking.customerPhone,
+    after(() =>
+      pushToAdmins(
         'BOOKING_CANCELLED',
-        buildBookingCancelledClientPayload(booking, booking.service.name),
+        buildBookingCancelledAdminPayload(booking, booking.service.name),
         booking.id,
-      ).catch((e) => console.error('Client push failed:', e));
+      ).catch((e) => console.error('Admin push failed:', e)),
+    );
+    if (booking.customerPhone) {
+      after(() =>
+        pushToClientPhone(
+          booking.customerPhone,
+          'BOOKING_CANCELLED',
+          buildBookingCancelledClientPayload(booking, booking.service.name),
+          booking.id,
+        ).catch((e) => console.error('Client push failed:', e)),
+      );
     }
   }
 
@@ -1195,19 +1212,23 @@ export async function clientCancelBookingAction(input: {
   revalidatePath('/admin/dashboard');
 
   // Notify admin
-  pushToAdmins(
-    'BOOKING_CANCELLED',
-    buildBookingCancelledAdminPayload(booking, booking.service.name),
-    booking.id,
-  ).catch((e) => console.error('Admin push failed:', e));
+  after(() =>
+    pushToAdmins(
+      'BOOKING_CANCELLED',
+      buildBookingCancelledAdminPayload(booking, booking.service.name),
+      booking.id,
+    ).catch((e) => console.error('Admin push failed:', e)),
+  );
   // Confirm to client
   if (booking.customerPhone) {
-    pushToClientPhone(
-      booking.customerPhone,
-      'BOOKING_CANCELLED',
-      buildBookingCancelledClientPayload(booking, booking.service.name),
-      booking.id,
-    ).catch((e) => console.error('Client push failed:', e));
+    after(() =>
+      pushToClientPhone(
+        booking.customerPhone,
+        'BOOKING_CANCELLED',
+        buildBookingCancelledClientPayload(booking, booking.service.name),
+        booking.id,
+      ).catch((e) => console.error('Client push failed:', e)),
+    );
   }
 
   return { ok: true, data: null };
