@@ -50,6 +50,7 @@ async function sendOne(
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       },
       JSON.stringify(payload),
+      { urgency: 'high', TTL: 60 },
     );
     await prisma.pushSubscription.update({
       where: { id: sub.id },
