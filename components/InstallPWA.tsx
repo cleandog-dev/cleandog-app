@@ -7,35 +7,27 @@ type BIPEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
-const DISMISS_KEY = 'cleandog-install-dismissed';
-
 export function InstallPWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<BIPEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSHint, setShowIOSHint] = useState(false);
   const [installed, setInstalled] = useState(false);
+  // dismissed lives only in component state → resets on next page load.
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Already installed?
+    // Already installed as PWA?
     const standalone =
       window.matchMedia('(display-mode: standalone)').matches ||
-      // iOS Safari uses navigator.standalone
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
     if (standalone) {
       setInstalled(true);
       return;
     }
 
-    // User-dismissed previously?
-    if (localStorage.getItem(DISMISS_KEY) === '1') {
-      setDismissed(true);
-    }
-
     // iOS detection (no beforeinstallprompt on iOS)
     const ua = window.navigator.userAgent;
-    const ios = /iPad|iPhone|iPod/.test(ua);
-    setIsIOS(ios);
+    setIsIOS(/iPad|iPhone|iPod/.test(ua));
 
     // Android / Chrome / Edge — native prompt
     const onBIP = (e: Event) => {
@@ -61,22 +53,19 @@ export function InstallPWA() {
   // Android / desktop with native prompt available
   if (deferredPrompt) {
     return (
-      <div className="fixed bottom-3 left-3 right-3 z-50 mx-auto max-w-md rounded-xl border bg-white p-3 shadow-lg flex items-center gap-3">
-        <div className="text-2xl">⤓</div>
+      <div className="sticky top-0 z-40 flex items-center gap-3 border-b px-4 py-2.5 shadow-sm" style={{ background: 'var(--sage-100)', borderColor: 'var(--sage-200)' }}>
+        <div className="text-xl">⤓</div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold">Installa CleanDOG</p>
-          <p className="text-xs text-muted-foreground">Accedi più veloce, senza passare dal browser</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--sage-800)' }}>Installa CleanDOG</p>
+          <p className="text-xs" style={{ color: 'var(--ink-500)' }}>Accedi più veloce, senza passare dal browser</p>
         </div>
         <button
-          className="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+          className="rounded-md px-3 py-1.5 text-xs font-medium text-white flex-shrink-0"
           style={{ background: 'var(--sage-800)' }}
           onClick={async () => {
             await deferredPrompt.prompt();
             const choice = await deferredPrompt.userChoice;
-            if (choice.outcome === 'dismissed') {
-              localStorage.setItem(DISMISS_KEY, '1');
-              setDismissed(true);
-            }
+            if (choice.outcome === 'dismissed') setDismissed(true);
             setDeferredPrompt(null);
           }}
         >
@@ -84,11 +73,9 @@ export function InstallPWA() {
         </button>
         <button
           aria-label="Chiudi"
-          className="text-muted-foreground text-lg leading-none px-1"
-          onClick={() => {
-            localStorage.setItem(DISMISS_KEY, '1');
-            setDismissed(true);
-          }}
+          className="text-lg leading-none px-1 flex-shrink-0"
+          style={{ color: 'var(--ink-500)' }}
+          onClick={() => setDismissed(true)}
         >
           ×
         </button>
@@ -100,14 +87,14 @@ export function InstallPWA() {
   if (isIOS) {
     return (
       <>
-        <div className="fixed bottom-3 left-3 right-3 z-50 mx-auto max-w-md rounded-xl border bg-white p-3 shadow-lg flex items-center gap-3">
-          <div className="text-2xl">📱</div>
+        <div className="sticky top-0 z-40 flex items-center gap-3 border-b px-4 py-2.5 shadow-sm" style={{ background: 'var(--sage-100)', borderColor: 'var(--sage-200)' }}>
+          <div className="text-xl">📱</div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">Installa su iPhone</p>
-            <p className="text-xs text-muted-foreground">Tocca Condividi → Aggiungi a Home</p>
+            <p className="text-sm font-semibold" style={{ color: 'var(--sage-800)' }}>Installa su iPhone</p>
+            <p className="text-xs" style={{ color: 'var(--ink-500)' }}>Tocca Condividi → Aggiungi a Home</p>
           </div>
           <button
-            className="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-white flex-shrink-0"
             style={{ background: 'var(--sage-800)' }}
             onClick={() => setShowIOSHint(true)}
           >
@@ -115,11 +102,9 @@ export function InstallPWA() {
           </button>
           <button
             aria-label="Chiudi"
-            className="text-muted-foreground text-lg leading-none px-1"
-            onClick={() => {
-              localStorage.setItem(DISMISS_KEY, '1');
-              setDismissed(true);
-            }}
+            className="text-lg leading-none px-1 flex-shrink-0"
+            style={{ color: 'var(--ink-500)' }}
+            onClick={() => setDismissed(true)}
           >
             ×
           </button>
@@ -143,7 +128,7 @@ export function InstallPWA() {
                   >
                     1
                   </span>
-                  <span>Tocca l'icona <strong>Condividi</strong> (⎙) in basso (Safari) o in alto (Chrome iOS)</span>
+                  <span>Tocca l&apos;icona <strong>Condividi</strong> (⎙) in basso (Safari) o in alto (Chrome iOS)</span>
                 </li>
                 <li className="flex gap-3">
                   <span
@@ -152,7 +137,7 @@ export function InstallPWA() {
                   >
                     2
                   </span>
-                  <span>Scorri e tocca <strong>"Aggiungi a Home"</strong></span>
+                  <span>Scorri e tocca <strong>&quot;Aggiungi a Home&quot;</strong></span>
                 </li>
                 <li className="flex gap-3">
                   <span
@@ -161,7 +146,7 @@ export function InstallPWA() {
                   >
                     3
                   </span>
-                  <span>Tocca <strong>"Aggiungi"</strong> in alto a destra</span>
+                  <span>Tocca <strong>&quot;Aggiungi&quot;</strong> in alto a destra</span>
                 </li>
               </ol>
               <button

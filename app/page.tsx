@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Logo } from '@/components/Logo';
-import { InstallPWA } from '@/components/InstallPWA';
 import { getDogBreeds, getCatBreeds, getPricesMapForAnimal } from '@/lib/breeds-server';
 import { prisma } from '@/lib/db';
 
@@ -276,8 +275,6 @@ export default async function HomePage() {
           </div>
         </section>
       </main>
-
-      <InstallPWA />
 
       <footer className="border-t px-5 py-6 text-center text-xs" style={{ borderColor: 'var(--cream-300)', color: 'var(--ink-300)' }}>
         <p style={{ letterSpacing: '0.12em', textTransform: 'uppercase', fontSize: 10 }}>

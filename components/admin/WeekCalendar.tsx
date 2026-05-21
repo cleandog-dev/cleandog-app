@@ -162,45 +162,45 @@ export function WeekCalendar({
       </div>
 
       {/* Time-grid calendar (Calendario view) — mobile-first Google Calendar style */}
-      <div className={`rounded-xl border bg-white shadow-sm ${mobileView === 'grid' ? 'block' : 'hidden'}`}>
-        {/* Sticky day header */}
-        <div
-          className="grid border-b bg-white"
-          style={{ gridTemplateColumns: '32px repeat(6, minmax(0, 1fr))' }}
-        >
-          <div className="border-r" />
-          {days.map((day) => {
-            const isToday = isSameDay(day, today);
-            const count = bookings.filter(
-              (b) =>
-                isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
-                ['CONFIRMED', 'PENDING'].includes(b.status),
-            ).length;
-            return (
-              <div
-                key={day.toISOString()}
-                className={`flex flex-col items-center justify-center gap-0.5 border-r py-1.5 text-center ${isToday ? 'bg-accent/40' : ''}`}
-              >
-                <span className="text-[10px] font-medium uppercase leading-none text-muted-foreground">
-                  {format(day, 'EEEEE', { locale: it })}
-                </span>
-                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
-                  isToday ? 'bg-primary text-primary-foreground' : ''
-                }`}>
-                  {format(day, 'd')}
-                </span>
-                {count > 0 && (
-                  <span className="text-[9px] font-semibold leading-none text-primary">
-                    {count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Scrollable time grid */}
+      <div className={`rounded-xl border bg-white shadow-sm overflow-hidden ${mobileView === 'grid' ? 'block' : 'hidden'}`}>
+        {/* Scrollable container — header is inside (sticky) so it shares width with the grid */}
         <div ref={scrollRef} className="max-h-[70vh] overflow-y-auto">
+          {/* Sticky day header */}
+          <div
+            className="sticky top-0 z-20 grid border-b bg-white"
+            style={{ gridTemplateColumns: '32px repeat(6, minmax(0, 1fr))' }}
+          >
+            <div className="border-r" />
+            {days.map((day) => {
+              const isToday = isSameDay(day, today);
+              const count = bookings.filter(
+                (b) =>
+                  isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
+                  ['CONFIRMED', 'PENDING'].includes(b.status),
+              ).length;
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`flex flex-col items-center justify-center gap-0.5 border-r py-1.5 text-center ${isToday ? 'bg-accent/40' : ''}`}
+                >
+                  <span className="text-[10px] font-medium uppercase leading-none text-muted-foreground">
+                    {format(day, 'EEEEE', { locale: it })}
+                  </span>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
+                    isToday ? 'bg-primary text-primary-foreground' : ''
+                  }`}>
+                    {format(day, 'd')}
+                  </span>
+                  {count > 0 && (
+                    <span className="text-[9px] font-semibold leading-none text-primary">
+                      {count}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
           <div
             className="relative grid"
             style={{

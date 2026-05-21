@@ -9,6 +9,10 @@ import { createBookingAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import type { BreedEntry, PricesByAnimal } from '@/lib/breeds';
 import { PushSubscribe } from '@/components/PushSubscribe';
+import { format } from 'date-fns';
+import { it } from 'date-fns/locale';
+import { toZonedTime } from 'date-fns-tz';
+import { APP_TIMEZONE, formatEUR } from '@/lib/utils';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -153,21 +157,55 @@ export function BookingFlow({
         </div>
       )}
 
-      {selection && step > 1 && step < 4 && (
-        <div className="mb-6 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'var(--sage-100)', borderRadius: 'var(--r-md)' }}>
-          <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--sage-800)' }}>
-              {selection.breed} · {selection.serviceName.replace(/ — (Cane|Gatto)$/, '')}
-            </p>
-            <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
-              <span style={{ fontStyle: 'italic', opacity: 0.7 }}>da</span> {selection.priceMin} € · {selection.durationMin} min
-            </p>
+      {selection && step > 1 && step < 4 && (() => {
+        const whenLabel = slotISO
+          ? (() => {
+              const z = toZonedTime(new Date(slotISO), APP_TIMEZONE);
+              return format(z, "EEEE d MMMM 'alle' HH:mm", { locale: it });
+            })()
+          : null;
+        const coatLabel = selection.coatChoice === 'SHORT' ? 'Pelo corto' : selection.coatChoice === 'LONG' ? 'Pelo lungo' : null;
+        const detailsLine = [
+          selection.breed,
+          selection.sizeLabel,
+          coatLabel,
+        ].filter(Boolean).join(' · ');
+        return (
+          <div className="mb-6 rounded-xl px-4 py-3" style={{ background: 'var(--sage-100)', borderRadius: 'var(--r-md)' }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold" style={{ color: 'var(--sage-800)' }}>
+                  {selection.serviceName.replace(/ — (Cane|Gatto)$/, '')}
+                </p>
+                {detailsLine && (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--ink-500)' }}>{detailsLine}</p>
+                )}
+                {whenLabel && (
+                  <p className="text-xs mt-1 capitalize font-medium" style={{ color: 'var(--ink-700)' }}>
+                    📅 {whenLabel}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <p className="text-base font-bold" style={{ color: 'var(--sage-800)' }}>
+                  {whenLabel ? formatEUR(selection.priceMax * 100) : `da ${selection.priceMin} €`}
+                </p>
+                <p className="text-[10px]" style={{ color: 'var(--ink-300)' }}>{selection.durationMin} min</p>
+              </div>
+            </div>
+            <div className="mt-2 flex gap-3 text-[11px]">
+              <button type="button" onClick={() => setStep(1)} className="underline" style={{ color: 'var(--sage-700)' }}>
+                Cambia servizio/razza
+              </button>
+              {whenLabel && step === 3 && (
+                <button type="button" onClick={() => setStep(2)} className="underline" style={{ color: 'var(--sage-700)' }}>
+                  Cambia data/ora
+                </button>
+              )}
+            </div>
           </div>
-          <button type="button" onClick={() => setStep(1)} className="text-xs font-medium underline" style={{ color: 'var(--sage-700)' }}>
-            Cambia
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       <div key={step} className="step-enter">
         {step === 1 && (
@@ -196,18 +234,6 @@ export function BookingFlow({
         {step === 3 && selection && slotISO && (
           <CustomerStep
             animalLabel={selection.animalType === 'CAT' ? 'gatto' : 'cane'}
-            summary={{
-              serviceName: selection.serviceName.replace(/ — (Cane|Gatto)$/, ''),
-              breed: selection.breed,
-              sizeLabel: selection.sizeLabel,
-              coatChoice: selection.coatChoice,
-              addonNames: selection.addonServiceIds
-                .map((id) => services.find((s) => s.id === id))
-                .filter((s): s is typeof services[number] => !!s)
-                .map((s) => (s.displayName ?? s.name).replace(/ — (Cane|Gatto)$/, '')),
-              totalCents: selection.priceMax * 100,
-              startsAtISO: slotISO,
-            }}
             isSubmitting={isPending}
             onBack={() => setStep(2)}
             onSubmit={submit}

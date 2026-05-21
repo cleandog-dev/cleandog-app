@@ -378,7 +378,7 @@ export function ServicesManager({ services, missingByService = {} }: { services:
                 />
                 <span>
                   <strong>Prezzo fisso</strong>
-                  <span className="block text-xs text-muted-foreground">Stesso prezzo per qualsiasi razza/cliente.</span>
+                  <span className="block text-xs text-muted-foreground">Stesso prezzo per qualsiasi razza.</span>
                 </span>
               </label>
               <label className="flex items-start gap-2 text-sm cursor-pointer">

@@ -777,7 +777,7 @@ function PriceMatrixSection({
                     {sizeRows.length > 1 || showCoatColumns ? (
                       <p className="text-[11px] font-semibold" style={{ color: 'var(--ink-700)' }}>{sr.label}</p>
                     ) : null}
-                    <div className={`grid gap-2 ${showCoatColumns ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div className={`grid gap-2 ${showCoatColumns ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                       {coatColumns.map((coat) => {
                         const k = `${sizeKey ?? 'none'}::${coat ?? 'NONE'}`;
                         const v = svc.cells[k];
