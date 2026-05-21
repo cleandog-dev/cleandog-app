@@ -29,6 +29,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="it" suppressHydrationWarning>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(){
+                window.__cleandogBIP = null;
+                window.addEventListener('beforeinstallprompt', function(e){
+                  e.preventDefault();
+                  window.__cleandogBIP = e;
+                  window.dispatchEvent(new CustomEvent('cleandog-bip-ready'));
+                });
+                window.addEventListener('appinstalled', function(){
+                  window.__cleandogBIP = null;
+                });
+              })();
+            `,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
         <InstallPWA />

@@ -42,6 +42,18 @@ export function InstallPWA() {
     setHidden(false);
     setReady(true);
 
+    // Read globally-captured BIP event (set by inline script in layout head — fires before React mounts)
+    const win = window as unknown as { __cleandogBIP?: BIPEvent | null };
+    if (win.__cleandogBIP) {
+      setDeferredPrompt(win.__cleandogBIP);
+    }
+
+    const onBIPReady = () => {
+      if (win.__cleandogBIP) setDeferredPrompt(win.__cleandogBIP);
+    };
+    window.addEventListener('cleandog-bip-ready', onBIPReady);
+
+    // Late fallback (if event fires after hydration for any reason)
     const onBIP = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BIPEvent);
@@ -51,10 +63,12 @@ export function InstallPWA() {
     const onInstalled = () => {
       setHidden(true);
       setDeferredPrompt(null);
+      win.__cleandogBIP = null;
     };
     window.addEventListener('appinstalled', onInstalled);
 
     return () => {
+      window.removeEventListener('cleandog-bip-ready', onBIPReady);
       window.removeEventListener('beforeinstallprompt', onBIP);
       window.removeEventListener('appinstalled', onInstalled);
     };
@@ -87,14 +101,14 @@ export function InstallPWA() {
         ? 'Installa per notifiche istantanee'
         : 'Installa per accesso rapido';
 
-  const ctaLabel = deferredPrompt ? 'Installa' : 'Come fare';
+  const ctaLabel = 'Installa';
 
   return (
     <>
-      <div className="fixed left-0 right-0 top-0 z-50 mx-auto max-w-md">
+      <div className="fixed left-0 right-0 top-0 z-50 mx-auto max-w-md px-3">
         <div
-          className="flex items-center gap-3 bg-white px-3 py-2.5 shadow-lg sm:mt-2 sm:rounded-2xl"
-          style={{ border: '1px solid var(--cream-300)' }}
+          className="mt-3 flex items-center gap-3 bg-white px-3 py-2.5 shadow-lg"
+          style={{ border: '1px solid var(--cream-300)', borderRadius: 'var(--r-lg)' }}
         >
           <button
             aria-label="Chiudi"
