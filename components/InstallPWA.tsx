@@ -8,29 +8,40 @@ type BIPEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
+const DISMISS_KEY = 'cleandog-install-dismissed-v2';
+
+type Platform = 'ios' | 'android' | 'desktop';
+
+function detectPlatform(): Platform {
+  const ua = window.navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  return 'desktop';
+}
+
 export function InstallPWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<BIPEvent | null>(null);
-  const [isIOS, setIsIOS] = useState(false);
-  const [showIOSHint, setShowIOSHint] = useState(false);
-  const [installed, setInstalled] = useState(false);
-  // dismissed lives only in component state → resets on next page load.
-  const [dismissed, setDismissed] = useState(false);
+  const [platform, setPlatform] = useState<Platform | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [hidden, setHidden] = useState(true);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     // Already installed as PWA?
     const standalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (standalone) {
-      setInstalled(true);
-      return;
-    }
+    if (standalone) return;
 
-    // iOS detection (no beforeinstallprompt on iOS)
-    const ua = window.navigator.userAgent;
-    setIsIOS(/iPad|iPhone|iPod/.test(ua));
+    // Previously dismissed?
+    if (localStorage.getItem(DISMISS_KEY) === '1') return;
 
-    // Android / Chrome / Edge — native prompt
+    setPlatform(detectPlatform());
+    setHidden(false);
+    setReady(true);
+
     const onBIP = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BIPEvent);
@@ -38,7 +49,7 @@ export function InstallPWA() {
     window.addEventListener('beforeinstallprompt', onBIP);
 
     const onInstalled = () => {
-      setInstalled(true);
+      setHidden(true);
       setDeferredPrompt(null);
     };
     window.addEventListener('appinstalled', onInstalled);
@@ -49,145 +60,142 @@ export function InstallPWA() {
     };
   }, []);
 
-  if (installed || dismissed) return null;
+  if (!ready || hidden || !platform) return null;
 
-  // Shared card chrome — Smart App Banner style, CleanDOG palette
-  const Banner = ({
-    title,
-    tagline,
-    cta,
-    onCta,
-    ctaDisabled,
-  }: {
-    title: string;
-    tagline: string;
-    cta: string;
-    onCta: () => void | Promise<void>;
-    ctaDisabled?: boolean;
-  }) => (
-    <div className="sticky top-2 z-40 mx-2 sm:mx-auto sm:max-w-md">
-      <div
-        className="flex items-center gap-3 rounded-2xl bg-white px-3 py-2.5 shadow-lg"
-        style={{ border: '1px solid var(--cream-300)' }}
-      >
-        <button
-          aria-label="Chiudi"
-          className="flex h-7 w-7 items-center justify-center rounded-full text-base leading-none flex-shrink-0"
-          style={{ background: 'var(--cream-100)', color: 'var(--ink-500)' }}
-          onClick={() => setDismissed(true)}
-        >
-          ×
-        </button>
+  function dismiss() {
+    localStorage.setItem(DISMISS_KEY, '1');
+    setHidden(true);
+  }
+
+  async function handleInstall() {
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setHidden(true);
+      }
+      setDeferredPrompt(null);
+      return;
+    }
+    setShowHint(true);
+  }
+
+  const tagline =
+    platform === 'ios'
+      ? 'Aggiungi alla schermata Home'
+      : platform === 'android'
+        ? 'Installa per notifiche istantanee'
+        : 'Installa per accesso rapido';
+
+  const ctaLabel = deferredPrompt ? 'Installa' : 'Come fare';
+
+  return (
+    <>
+      <div className="fixed left-0 right-0 top-0 z-50 mx-auto max-w-md">
         <div
-          className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl"
-          style={{ background: 'var(--sage-100)' }}
+          className="flex items-center gap-3 bg-white px-3 py-2.5 shadow-lg sm:mt-2 sm:rounded-2xl"
+          style={{ border: '1px solid var(--cream-300)' }}
         >
-          <Image src="/icon" alt="CleanDOG" width={48} height={48} className="h-full w-full object-cover" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="truncate text-[15px] font-semibold leading-tight" style={{ color: 'var(--ink-900)' }}>
-            {title}
-          </p>
-          <p className="truncate text-[12px] leading-tight mt-0.5" style={{ color: 'var(--ink-500)' }}>
-            {tagline}
-          </p>
-          <p className="truncate text-[11px] leading-tight mt-0.5" style={{ color: 'var(--ink-300)' }}>
-            🐾 Toelettatura · Messina · Gratis
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={ctaDisabled}
-          onClick={onCta}
-          className="flex-shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
-          style={{ background: 'var(--sage-800)' }}
-        >
-          {cta}
-        </button>
-      </div>
-    </div>
-  );
-
-  // Android / desktop with native prompt available
-  if (deferredPrompt) {
-    return (
-      <Banner
-        title="CleanDOG"
-        tagline="Più veloce. Notifiche istantanee."
-        cta="Installa"
-        onCta={async () => {
-          await deferredPrompt.prompt();
-          const choice = await deferredPrompt.userChoice;
-          if (choice.outcome === 'dismissed') setDismissed(true);
-          setDeferredPrompt(null);
-        }}
-      />
-    );
-  }
-
-  // iOS — no native prompt, show manual instructions
-  if (isIOS) {
-    return (
-      <>
-        <Banner
-          title="CleanDOG"
-          tagline="Aggiungi alla schermata Home"
-          cta="Apri"
-          onCta={() => setShowIOSHint(true)}
-        />
-
-        {showIOSHint && (
-          <div
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4"
-            onClick={() => setShowIOSHint(false)}
+          <button
+            aria-label="Chiudi"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-base leading-none flex-shrink-0"
+            style={{ background: 'var(--cream-100)', color: 'var(--ink-500)' }}
+            onClick={dismiss}
           >
-            <div
-              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold">Aggiungi alla schermata Home</h3>
-              <ol className="mt-3 space-y-3 text-sm">
-                <li className="flex gap-3">
-                  <span
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                    style={{ background: 'var(--sage-800)' }}
-                  >
-                    1
-                  </span>
-                  <span>Tocca l&apos;icona <strong>Condividi</strong> (⎙) in basso (Safari) o in alto (Chrome iOS)</span>
-                </li>
-                <li className="flex gap-3">
-                  <span
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                    style={{ background: 'var(--sage-800)' }}
-                  >
-                    2
-                  </span>
-                  <span>Scorri e tocca <strong>&quot;Aggiungi a Home&quot;</strong></span>
-                </li>
-                <li className="flex gap-3">
-                  <span
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                    style={{ background: 'var(--sage-800)' }}
-                  >
-                    3
-                  </span>
-                  <span>Tocca <strong>&quot;Aggiungi&quot;</strong> in alto a destra</span>
-                </li>
-              </ol>
-              <button
-                className="mt-5 w-full rounded-md py-2.5 text-sm font-medium text-white"
-                style={{ background: 'var(--sage-800)' }}
-                onClick={() => setShowIOSHint(false)}
-              >
-                Capito
-              </button>
-            </div>
+            ×
+          </button>
+          <Image
+            src="/icon"
+            alt="CleanDOG"
+            width={48}
+            height={48}
+            className="h-12 w-12 flex-shrink-0 rounded-[11px] object-contain"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-[15px] font-semibold leading-tight" style={{ color: 'var(--ink-900)' }}>
+              CleanDOG App
+            </p>
+            <p className="truncate text-[12px] leading-tight mt-0.5" style={{ color: 'var(--ink-500)' }}>
+              {tagline}
+            </p>
+            <p className="truncate text-[11px] leading-tight mt-0.5" style={{ color: 'var(--ink-300)' }}>
+              🐾 Toelettatura · Messina · Gratis
+            </p>
           </div>
-        )}
-      </>
+          <button
+            type="button"
+            onClick={handleInstall}
+            className="flex-shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+            style={{ background: 'var(--sage-800)' }}
+          >
+            {ctaLabel}
+          </button>
+        </div>
+      </div>
+
+      {showHint && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+          onClick={() => setShowHint(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold">Aggiungi CleanDOG alla Home</h3>
+            <InstallSteps platform={platform} />
+            <button
+              className="mt-5 w-full rounded-md py-2.5 text-sm font-medium text-white"
+              style={{ background: 'var(--sage-800)' }}
+              onClick={() => setShowHint(false)}
+            >
+              Capito
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Step({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span
+        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+        style={{ background: 'var(--sage-800)' }}
+      >
+        {n}
+      </span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function InstallSteps({ platform }: { platform: Platform }) {
+  if (platform === 'ios') {
+    return (
+      <ol className="mt-3 space-y-3 text-sm">
+        <Step n={1}>Tocca l&apos;icona <strong>Condividi</strong> (⎙) in basso (Safari) o in alto (Chrome iOS)</Step>
+        <Step n={2}>Scorri e tocca <strong>&quot;Aggiungi a Home&quot;</strong></Step>
+        <Step n={3}>Tocca <strong>&quot;Aggiungi&quot;</strong> in alto a destra</Step>
+      </ol>
     );
   }
-
-  return null;
+  if (platform === 'android') {
+    return (
+      <ol className="mt-3 space-y-3 text-sm">
+        <Step n={1}>Apri il menu <strong>⋮</strong> di Chrome in alto a destra</Step>
+        <Step n={2}>Tocca <strong>&quot;Installa app&quot;</strong> (o &quot;Aggiungi a schermata Home&quot;)</Step>
+        <Step n={3}>Conferma <strong>&quot;Installa&quot;</strong></Step>
+      </ol>
+    );
+  }
+  return (
+    <ol className="mt-3 space-y-3 text-sm">
+      <Step n={1}>Clicca l&apos;icona <strong>⊕ Installa</strong> nella barra indirizzi di Chrome/Edge</Step>
+      <Step n={2}>Oppure menu <strong>⋮</strong> → <strong>&quot;Installa CleanDOG&quot;</strong></Step>
+      <Step n={3}>Conferma con <strong>&quot;Installa&quot;</strong></Step>
+    </ol>
+  );
 }
