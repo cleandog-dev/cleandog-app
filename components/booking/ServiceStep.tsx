@@ -473,37 +473,6 @@ export function ServiceStep({
         </div>
       )}
 
-      {/* ── Sempre incluso (subito dopo razza) ── */}
-      {animal && selectedBreed && (
-        <div
-          style={{
-            borderRadius: 'var(--r-md)',
-            padding: '12px 14px 12px 16px',
-            background: 'white',
-            borderLeft: '3px solid var(--sage-800)',
-            border: '1px solid var(--cream-300)',
-            borderLeftWidth: 3,
-            borderLeftColor: 'var(--sage-800)',
-          }}
-        >
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--sage-800)',
-              marginBottom: 4,
-            }}
-          >
-            ✓ Sempre incluso
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
-            Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
-          </p>
-        </div>
-      )}
-
       {/* ── 3a. Misura (se razza ha 2+ misure) ── */}
       {selectedBreed && breedSizes.length > 1 && (
         <div>
@@ -686,6 +655,37 @@ export function ServiceStep({
         <div className="rounded-md border p-4 text-sm" style={{ borderColor: 'var(--cream-300)', background: 'var(--cream-50)' }}>
           Nessun servizio configurato per {animal === 'CAT' ? 'gatti' : 'cani'}.
           Contattaci per maggiori informazioni.
+        </div>
+      )}
+
+      {/* ── Sempre incluso (sotto servizi, sopra extra) ── */}
+      {animal && selectedBreed && (primaryService || selectedAddonIds.size > 0) && (
+        <div
+          style={{
+            borderRadius: 'var(--r-md)',
+            padding: '12px 14px 12px 16px',
+            background: 'white',
+            borderLeft: '3px solid var(--sage-800)',
+            border: '1px solid var(--cream-300)',
+            borderLeftWidth: 3,
+            borderLeftColor: 'var(--sage-800)',
+          }}
+        >
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--sage-800)',
+              marginBottom: 4,
+            }}
+          >
+            ✓ Sempre incluso
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+            Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
+          </p>
         </div>
       )}
 
