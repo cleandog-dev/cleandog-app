@@ -106,11 +106,17 @@ export function NewBookingDialog({
     [breeds, draft.animalType],
   );
 
-  const selectedBreed = breeds.find((b) => b.name === draft.dogBreed) ?? null;
+  const selectedBreed = useMemo(
+    () => breeds.find((b) => b.name === draft.dogBreed) ?? null,
+    [breeds, draft.dogBreed],
+  );
   const animalPayload = pricesByAnimal[draft.animalType];
-  const priceMap = animalPayload?.pricesByBreed ?? {};
-  const sizesMap = animalPayload?.sizesByBreed ?? {};
-  const breedSizes = selectedBreed ? (sizesMap[selectedBreed.id] ?? []) : [];
+  const priceMap = useMemo(() => animalPayload?.pricesByBreed ?? {}, [animalPayload]);
+  const sizesMap = useMemo(() => animalPayload?.sizesByBreed ?? {}, [animalPayload]);
+  const breedSizes = useMemo(
+    () => (selectedBreed ? (sizesMap[selectedBreed.id] ?? []) : []),
+    [selectedBreed, sizesMap],
+  );
   const hasSizes = breedSizes.length > 0;
 
   const isMixed = selectedBreed?.coatType === 'MIXED';
