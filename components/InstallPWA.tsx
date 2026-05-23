@@ -8,9 +8,11 @@ type BIPEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
-const DISMISS_KEY = 'cleandog-install-dismissed-v2';
+const DISMISS_KEY = 'cleandog-install-dismissed-v3';
 
 type Platform = 'ios' | 'android' | 'desktop';
+// 'pending' = on Android/desktop we wait briefly to see if BIP fires before deciding label.
+type Mode = 'native' | 'manual' | 'pending';
 
 function detectPlatform(): Platform {
   const ua = window.navigator.userAgent;
@@ -22,6 +24,7 @@ function detectPlatform(): Platform {
 export function InstallPWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<BIPEvent | null>(null);
   const [platform, setPlatform] = useState<Platform | null>(null);
+  const [mode, setMode] = useState<Mode>('pending');
   const [showHint, setShowHint] = useState(false);
   const [ready, setReady] = useState(false);
   const [hidden, setHidden] = useState(true);
@@ -38,25 +41,36 @@ export function InstallPWA() {
     // Previously dismissed?
     if (localStorage.getItem(DISMISS_KEY) === '1') return;
 
-    setPlatform(detectPlatform());
+    const p = detectPlatform();
+    setPlatform(p);
     setHidden(false);
     setReady(true);
+
+    // iOS: no BIP API exists → always manual.
+    if (p === 'ios') {
+      setMode('manual');
+      return;
+    }
 
     // Read globally-captured BIP event (set by inline script in layout head — fires before React mounts)
     const win = window as unknown as { __cleandogBIP?: BIPEvent | null };
     if (win.__cleandogBIP) {
       setDeferredPrompt(win.__cleandogBIP);
+      setMode('native');
     }
 
     const onBIPReady = () => {
-      if (win.__cleandogBIP) setDeferredPrompt(win.__cleandogBIP);
+      if (win.__cleandogBIP) {
+        setDeferredPrompt(win.__cleandogBIP);
+        setMode('native');
+      }
     };
     window.addEventListener('cleandog-bip-ready', onBIPReady);
 
-    // Late fallback (if event fires after hydration for any reason)
     const onBIP = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BIPEvent);
+      setMode('native');
     };
     window.addEventListener('beforeinstallprompt', onBIP);
 
@@ -67,10 +81,17 @@ export function InstallPWA() {
     };
     window.addEventListener('appinstalled', onInstalled);
 
+    // If BIP hasn't fired within 2s, assume browser won't support direct install
+    // (Firefox Android, Brave with shields, etc.) → fall back to manual guide.
+    const fallbackTimer = window.setTimeout(() => {
+      setMode((m) => (m === 'pending' ? 'manual' : m));
+    }, 2000);
+
     return () => {
       window.removeEventListener('cleandog-bip-ready', onBIPReady);
       window.removeEventListener('beforeinstallprompt', onBIP);
       window.removeEventListener('appinstalled', onInstalled);
+      window.clearTimeout(fallbackTimer);
     };
   }, []);
 
@@ -82,15 +103,22 @@ export function InstallPWA() {
   }
 
   async function handleInstall() {
+    // Try native install first — even if mode is 'pending', a BIP may have just landed.
     if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        setHidden(true);
+      try {
+        await deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          setHidden(true);
+        }
+      } catch {
+        // Some browsers throw if prompt called twice — fall back to guide.
+        setShowHint(true);
       }
       setDeferredPrompt(null);
       return;
     }
+    // No native install available → show platform-specific guide.
     setShowHint(true);
   }
 
@@ -101,6 +129,8 @@ export function InstallPWA() {
         ? 'Installa per notifiche istantanee'
         : 'Installa per accesso rapido';
 
+  // Always "Installa" — click handler picks the right path:
+  // native OS prompt when available, fallback guide when not.
   const ctaLabel = 'Installa';
 
   return (

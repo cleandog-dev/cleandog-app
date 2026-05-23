@@ -35,6 +35,7 @@ export default async function AdminStaffPage() {
       },
       include: { service: true },
       orderBy: { startsAt: 'asc' },
+      take: 500,
     }),
     prisma.booking.count({
       where: {
@@ -58,12 +59,12 @@ export default async function AdminStaffPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh intervalMs={180_000} />
 
       <div>
         <h1 className="text-xl font-bold sm:text-2xl">Personale</h1>
         <p className="text-[11px] text-muted-foreground sm:text-sm">
-          Aggiornamento automatico ogni 60s
+          Aggiornamento automatico ogni 3 min
         </p>
       </div>
 

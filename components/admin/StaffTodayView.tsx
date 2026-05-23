@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import type { Booking, Service, BookingStatus } from '@prisma/client';
@@ -38,6 +38,12 @@ export function StaffTodayView({ bookings }: { bookings: Row[] }) {
   const [selected, setSelected] = useState<Row | null>(null);
   const { toast } = useToast();
 
+  const localTimes = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of bookings) m.set(b.id, format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm'));
+    return m;
+  }, [bookings]);
+
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   function setStatus(id: string, status: BookingStatus) {
@@ -61,7 +67,7 @@ export function StaffTodayView({ bookings }: { bookings: Row[] }) {
   return (
     <div className="grid gap-2">
       {bookings.map((b) => {
-        const local = toZonedTime(b.startsAt, APP_TIMEZONE);
+        const localTime = localTimes.get(b.id) ?? '';
         const isDone = b.status === 'COMPLETED';
         const isCancelled = b.status === 'CANCELLED' || b.status === 'NO_SHOW';
         return (
@@ -77,7 +83,7 @@ export function StaffTodayView({ bookings }: { bookings: Row[] }) {
                   style={{ background: 'var(--cream-200)' }}
                 >
                   <p className="text-lg font-bold leading-none md:text-xl">
-                    {format(local, 'HH:mm')}
+                    {localTime}
                   </p>
                   <p className="mt-1 text-[9px] uppercase tracking-wide text-muted-foreground md:text-[10px]">
                     {b.service.durationMin}m

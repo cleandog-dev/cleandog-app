@@ -41,6 +41,29 @@ function toLocalInput(d: Date): string {
   return format(toZonedTime(d, APP_TIMEZONE), "yyyy-MM-dd'T'HH:mm");
 }
 
+function cleanServiceName(name: string): string {
+  return name.replace(/ — (Cane|Gatto)$/, '').trim();
+}
+
+type AddonItem = { serviceId?: string; name?: string; priceCents?: number };
+
+function parseAddons(json: string | null): AddonItem[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as AddonItem[];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatServiceLine(b: Row): string {
+  const primary = cleanServiceName(b.serviceName || b.service.name);
+  const addons = parseAddons(b.addonItemsJson).map((a) => a.name ? cleanServiceName(a.name) : '').filter(Boolean);
+  if (!addons.length) return primary;
+  return `${primary} + ${addons.join(' + ')}`;
+}
+
 export function BookingDetailDialog({
   booking,
   onClose,
@@ -69,6 +92,8 @@ export function BookingDetailDialog({
       setEditNotes(booking.notes ?? '');
       setMode(initialMode);
     }
+    // Intentionally key on booking.id only — full booking ref churns each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booking?.id, initialMode]);
 
   useEffect(() => {
@@ -85,6 +110,7 @@ export function BookingDetailDialog({
       })
       .finally(() => { if (!cancelled) setSlotsLoading(false); });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booking?.id, mode, editDateOnly]);
 
   function handleClose() {
@@ -127,7 +153,7 @@ export function BookingDetailDialog({
                     {animalLabel(booking)}
                   </DialogTitle>
                   <p className="text-sm text-muted-foreground">
-                    {booking.service.name.replace(/ — (Cane|Gatto)$/, '')}
+                    ✂️ {formatServiceLine(booking)}
                   </p>
                 </DialogHeader>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -191,6 +217,35 @@ export function BookingDetailDialog({
                         {booking.dogSize && <Badge variant="secondary" className="text-[10px]">{booking.dogSize}</Badge>}
                       </div>
                     </DetailRow>
+
+                    {(() => {
+                      const primaryName = cleanServiceName(booking.serviceName || booking.service.name);
+                      const addons = parseAddons(booking.addonItemsJson);
+                      const primaryCents = booking.bathCents ?? (addons.length > 0
+                        ? booking.priceCents - addons.reduce((s, a) => s + (a.priceCents ?? 0), 0) - (booking.extrasCents ?? 0)
+                        : booking.priceCents - (booking.extrasCents ?? 0));
+                      const items: Array<{ name: string; priceCents: number }> = [
+                        { name: primaryName, priceCents: Math.max(0, primaryCents) },
+                        ...addons.map((a) => ({ name: cleanServiceName(a.name ?? 'Servizio'), priceCents: a.priceCents ?? 0 })),
+                      ];
+                      return (
+                        <DetailRow label={`Servizi (${items.length})`}>
+                          <ul className="space-y-1">
+                            {items.map((it, i) => (
+                              <li key={`${it.name}-${i}`} className="flex items-baseline justify-between gap-2 text-sm">
+                                <span className="flex-1 truncate">
+                                  <span className="mr-1.5 text-xs opacity-60">{i === 0 ? '✂️' : '➕'}</span>
+                                  {it.name}
+                                </span>
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  {formatEUR(it.priceCents)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </DetailRow>
+                      );
+                    })()}
 
                     {(() => {
                       const extras = parseExtraNamesFromNotes(booking.notes);

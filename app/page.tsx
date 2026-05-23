@@ -1,18 +1,15 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Logo } from '@/components/Logo';
-import { getDogBreeds, getCatBreeds, getPricesMapForAnimal } from '@/lib/breeds-server';
+import { getPricesMapForAnimal } from '@/lib/breeds-server';
 import { prisma } from '@/lib/db';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 export default async function HomePage() {
-  const [dogBreeds, catBreeds, services, dogPrices, catPrices] = await Promise.all([
-    getDogBreeds(),
-    getCatBreeds(),
+  const [services, dogPrices] = await Promise.all([
     prisma.service.findMany({ where: { active: true, deletedAt: null } }),
     getPricesMapForAnimal('DOG'),
-    getPricesMapForAnimal('CAT'),
   ]);
 
   // Compute min cents across breeds for a given service id (any size/coat cell).
@@ -32,8 +29,6 @@ export default async function HomePage() {
     }
     return m === Infinity ? 0 : Math.round(m / 100);
   };
-
-  void dogBreeds; void catBreeds;
 
   type Card = {
     emoji: string;
@@ -123,7 +118,6 @@ export default async function HomePage() {
   };
 
   const cards: Card[] = cardsForAnimal('DOG', dogPrices);
-  void catPrices;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--cream-100)' }}>

@@ -24,25 +24,21 @@ export async function getAvailableSlots(params: {
   sizeOptionId?: string | null;
   coatChoice?: 'SHORT' | 'LONG' | null;
 }): Promise<Slot[]> {
-  const service = await prisma.service.findUnique({
-    where: { id: params.serviceId },
-  });
+  const addonIds = Array.from(new Set(params.addonServiceIds ?? [])).filter(Boolean);
+
+  // Parallel: primary service + (optional) addons + (optional) breed lookup.
+  const [service, addonServices, breed] = await Promise.all([
+    prisma.service.findUnique({ where: { id: params.serviceId } }),
+    addonIds.length
+      ? prisma.service.findMany({ where: { id: { in: addonIds }, active: true } })
+      : Promise.resolve([] as { id: string; durationMin: number; pricingMode: string }[]),
+    params.breedName
+      ? prisma.breed.findUnique({ where: { name: params.breedName }, select: { id: true } })
+      : Promise.resolve(null),
+  ]);
   if (!service || !service.active) return [];
 
-  const addonIds = Array.from(new Set(params.addonServiceIds ?? [])).filter(Boolean);
-  const addonServices = addonIds.length
-    ? await prisma.service.findMany({ where: { id: { in: addonIds }, active: true } })
-    : [];
-
-  // Resolve per-cell duration override (BreedServicePrice.durationMin) when breed is known.
   const allServiceIds = [service.id, ...addonServices.map((a) => a.id)];
-  let breed: { id: string } | null = null;
-  if (params.breedName) {
-    breed = await prisma.breed.findUnique({
-      where: { name: params.breedName },
-      select: { id: true },
-    });
-  }
   const cells = breed
     ? await prisma.breedServicePrice.findMany({
         where: { breedId: breed.id, serviceId: { in: allServiceIds }, active: true },
@@ -87,30 +83,25 @@ export async function getAvailableSlots(params: {
   const zonedMidnight = toZonedTime(localMidnight, APP_TIMEZONE);
   const dayOfWeek = zonedMidnight.getDay();
 
-  const openings = await prisma.openingHour.findMany({
-    where: { dayOfWeek, active: true },
-  });
+  // Parallel: opening hours + closures + bookings + slot step setting.
+  const [openings, closures, bookings, SLOT_STEP_MIN] = await Promise.all([
+    prisma.openingHour.findMany({ where: { dayOfWeek, active: true } }),
+    prisma.closure.findMany({
+      where: { AND: [{ startsAt: { lt: localDayEnd } }, { endsAt: { gt: localMidnight } }] },
+    }),
+    prisma.booking.findMany({
+      where: {
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        startsAt: { lt: localDayEnd },
+        endsAt: { gt: localMidnight },
+      },
+      select: { startsAt: true, endsAt: true },
+    }),
+    getSlotStepMin(),
+  ]);
   if (openings.length === 0) return [];
 
-  // Closures intersecting this day
-  const closures = await prisma.closure.findMany({
-    where: {
-      AND: [{ startsAt: { lt: localDayEnd } }, { endsAt: { gt: localMidnight } }],
-    },
-  });
-
-  // Existing bookings on that day (consider PENDING + CONFIRMED as occupying)
-  const bookings = await prisma.booking.findMany({
-    where: {
-      status: { in: ['PENDING', 'CONFIRMED'] },
-      startsAt: { lt: localDayEnd },
-      endsAt: { gt: localMidnight },
-    },
-    select: { startsAt: true, endsAt: true },
-  });
-
   const now = new Date();
-  const SLOT_STEP_MIN = await getSlotStepMin();
   const slots: Slot[] = [];
 
   for (const opening of openings) {

@@ -3,7 +3,6 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 
 export const dynamic = 'force-static';
-export const contentType = 'image/png';
 
 export async function GET() {
   const logoData = await readFile(path.join(process.cwd(), 'public', 'logo.png'));

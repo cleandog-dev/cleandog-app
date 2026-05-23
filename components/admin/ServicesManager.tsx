@@ -276,7 +276,7 @@ export function ServicesManager({ services, missingByService = {} }: { services:
       <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <DialogContent style={{ borderRadius: 'var(--r-lg)', maxWidth: 400 }}>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: 'var(--ink-900)' }}>
+            <DialogTitle style={{ fontFamily: 'var(--font-cormorant), serif', fontSize: 24, color: 'var(--ink-900)' }}>
               Disattiva servizio
             </DialogTitle>
           </DialogHeader>

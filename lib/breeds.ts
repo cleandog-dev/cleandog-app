@@ -8,11 +8,6 @@ export interface BreedEntry {
   animalType: AnimalType;
   size: SizeCategory | null;
   coatType: CoatType | null;
-  priceMin: number;
-  priceMax: number;
-  priceTrim: number | null;
-  priceTrimLong: number | null;
-  priceTouchUp: number | null;
 }
 
 export function formatPrice(min: number, max: number): string {

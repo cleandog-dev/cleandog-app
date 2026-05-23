@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 
 export const NAV_ITEMS: Array<[string, string]> = [
@@ -12,6 +12,20 @@ export const NAV_ITEMS: Array<[string, string]> = [
   ['/admin/hours', 'Orari'],
   ['/admin/export', 'Export'],
 ];
+
+function PendingFade({ children }: { children: React.ReactNode }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      style={{
+        opacity: pending ? 0.55 : 1,
+        transition: 'opacity 140ms ease-out',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
 export function AdminNavDesktop() {
   const pathname = usePathname();
@@ -31,7 +45,7 @@ export function AdminNavDesktop() {
               paddingBottom: 2,
             }}
           >
-            {label}
+            <PendingFade>{label}</PendingFade>
           </Link>
         );
       })}
@@ -55,7 +69,7 @@ export function AdminNavMobile() {
               color: active ? 'white' : 'var(--ink-700)',
             }}
           >
-            {label}
+            <PendingFade>{label}</PendingFade>
           </Link>
         );
       })}

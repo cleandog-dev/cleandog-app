@@ -22,9 +22,9 @@ export function Logo({
         style={{ display: 'block', flexShrink: 0 }}
       />
       {showText && (
-        <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1, display: 'inline-flex', alignItems: 'baseline' }}>
+        <span style={{ fontFamily: 'var(--font-dm-sans), sans-serif', fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1, display: 'inline-flex', alignItems: 'baseline' }}>
           <span style={{ color: 'var(--sage-800)' }}>Clean</span>
-          <span style={{ color: 'var(--brown-700)', fontFamily: "'Cormorant Garamond', serif", fontStyle: 'italic', fontWeight: 500 }}>Dog</span>
+          <span style={{ color: 'var(--brown-700)', fontFamily: 'var(--font-dm-sans), sans-serif', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>DOG</span>
         </span>
       )}
     </span>

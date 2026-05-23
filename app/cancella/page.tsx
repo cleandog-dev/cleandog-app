@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ClientCancel } from '@/components/ClientCancel';
 
 export const metadata = { title: 'Cancella prenotazione' };
@@ -15,9 +16,9 @@ export default function CancellaPage() {
         </p>
         <ClientCancel />
         <div className="mt-8 text-center">
-          <a href="/" className="text-sm underline" style={{ color: 'var(--sage-800)' }}>
+          <Link href="/" className="text-sm underline" style={{ color: 'var(--sage-800)' }}>
             Torna alla home
-          </a>
+          </Link>
         </div>
       </div>
     </main>

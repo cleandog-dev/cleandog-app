@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import type { Slot } from '@/lib/availability';
 
-function buildDateOptions(days = 21): Date[] {
+function buildDateOptions(days = 40): Date[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Array.from({ length: days }, (_, i) => {
@@ -25,7 +25,7 @@ export function DateTimeStep({ serviceId, addonServiceIds, breedName, sizeOption
   onBack: () => void;
   onSelect: (iso: string) => void;
 }) {
-  const dates = buildDateOptions(21);
+  const dates = buildDateOptions(40);
   const [selectedDate, setSelectedDate] = useState(() => format(dates[0]!, 'yyyy-MM-dd'));
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,7 @@ export function DateTimeStep({ serviceId, addonServiceIds, breedName, sizeOption
     <div className="space-y-6">
       {/* Month label */}
       <div>
-        <p className="eyebrow mb-3">{format(new Date(), 'MMMM yyyy', { locale: it })} · Prossimi 21 giorni</p>
+        <p className="eyebrow mb-3">{format(new Date(), 'MMMM yyyy', { locale: it })} · Prossimi 40 giorni</p>
 
         {/* Day chips — horizontal scroll */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-5 px-5">
@@ -87,7 +87,7 @@ export function DateTimeStep({ serviceId, addonServiceIds, breedName, sizeOption
                 <div style={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: isSelected ? 0.8 : 1, color: isSelected ? 'inherit' : 'var(--ink-500)' }}>
                   {format(d, 'EEE', { locale: it })}
                 </div>
-                <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 500, fontSize: 22, lineHeight: 1.1 }}>
+                <div style={{ fontFamily: 'var(--font-cormorant), serif', fontWeight: 500, fontSize: 22, lineHeight: 1.1 }}>
                   {format(d, 'd')}
                 </div>
                 {isSun && <div style={{ fontSize: 9, opacity: 0.7 }}>chiuso</div>}
@@ -136,7 +136,7 @@ export function DateTimeStep({ serviceId, addonServiceIds, breedName, sizeOption
                     border: sel ? '1px solid var(--sage-800)' : '1px solid var(--cream-300)',
                     background: sel ? 'var(--sage-800)' : 'var(--cream-50)',
                     color: sel ? 'var(--cream-50)' : 'var(--ink-700)',
-                    fontFamily: "'DM Sans', sans-serif",
+                    fontFamily: 'var(--font-dm-sans), sans-serif',
                     fontWeight: 500,
                     fontSize: 15,
                     cursor: 'pointer',

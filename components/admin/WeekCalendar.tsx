@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { format, startOfWeek, addDays, addWeeks, subWeeks, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { toZonedTime } from 'date-fns-tz';
@@ -13,17 +13,17 @@ import { BookingDetailDialog } from './BookingDetailDialog';
 type Row = Booking & { service: Service };
 
 const statusColor: Record<BookingStatus, string> = {
-  CONFIRMED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  PENDING: 'bg-amber-100 text-amber-800 border-amber-200',
-  COMPLETED: 'bg-gray-100 text-gray-600 border-gray-200',
-  CANCELLED: 'bg-red-100 text-red-700 border-red-200 line-through opacity-60',
-  NO_SHOW: 'bg-red-100 text-red-700 border-red-200 opacity-60',
+  CONFIRMED: 'bg-white text-slate-900 border-slate-200 border-l-emerald-500',
+  PENDING:   'bg-white text-slate-900 border-slate-200 border-l-amber-500',
+  COMPLETED: 'bg-slate-50 text-slate-500 border-slate-200 border-l-slate-400',
+  CANCELLED: 'bg-white text-slate-500 border-slate-200 border-l-rose-400 line-through opacity-70',
+  NO_SHOW:   'bg-white text-slate-500 border-slate-200 border-l-rose-400 opacity-70',
 };
 
 // Opening hours for visual guide (minutes from midnight)
 const OPEN_FROM = 9 * 60;   // 09:00
 const OPEN_TO = 18 * 60;    // 18:00
-const HOUR_HEIGHT_PX = 48;  // px per hour (used for both desktop + mobile)
+const HOUR_HEIGHT_PX = 64;  // px per hour (used for both desktop + mobile)
 const START_HOUR = 8;       // display from 08:00
 const END_HOUR = 19;        // display to 19:00
 const TOTAL_HOURS = END_HOUR - START_HOUR;
@@ -37,9 +37,23 @@ function durationToHeight(durationMin: number): number {
   return (durationMin / 60) * HOUR_HEIGHT_PX;
 }
 
-function toLocalMinutes(d: Date): number {
-  const local = toZonedTime(d, APP_TIMEZONE);
-  return local.getHours() * 60 + local.getMinutes();
+// Strip " — Cane/Gatto" suffix from service name for compact display.
+function cleanServiceName(name: string): string {
+  return name.replace(/ — (Cane|Gatto)$/, '').trim();
+}
+
+// Build a compact label: "primary + addon1, addon2" if addons exist, else just the primary service.
+function formatServiceLabel(b: Booking & { service: Service }): string {
+  const primary = cleanServiceName(b.serviceName || b.service.name);
+  if (!b.addonItemsJson) return primary;
+  try {
+    const addons = JSON.parse(b.addonItemsJson) as Array<{ name?: string }>;
+    const names = addons.map((a) => a.name ? cleanServiceName(a.name) : '').filter(Boolean);
+    if (!names.length) return primary;
+    return `${primary} + ${names.join(', ')}`;
+  } catch {
+    return primary;
+  }
 }
 
 export function WeekCalendar({
@@ -74,6 +88,38 @@ export function WeekCalendar({
 
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
 
+  // Pre-compute local date key per booking ONCE (toZonedTime is expensive).
+  type Indexed = Row & { _localKey: string; _startMin: number; _endMin: number };
+  const indexed = useMemo<Indexed[]>(() => {
+    return bookings.map((b) => {
+      const localStart = toZonedTime(b.startsAt, APP_TIMEZONE);
+      const localEnd = toZonedTime(b.endsAt, APP_TIMEZONE);
+      return {
+        ...b,
+        _localKey: format(localStart, 'yyyy-MM-dd'),
+        _startMin: localStart.getHours() * 60 + localStart.getMinutes(),
+        _endMin: localEnd.getHours() * 60 + localEnd.getMinutes(),
+      };
+    });
+  }, [bookings]);
+
+  // Group by local day key, plus active counts.
+  const byDay = useMemo(() => {
+    const map = new Map<string, Indexed[]>();
+    const activeCounts = new Map<string, number>();
+    for (const b of indexed) {
+      const arr = map.get(b._localKey);
+      if (arr) arr.push(b); else map.set(b._localKey, [b]);
+      if (b.status === 'CONFIRMED' || b.status === 'PENDING') {
+        activeCounts.set(b._localKey, (activeCounts.get(b._localKey) ?? 0) + 1);
+      }
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    }
+    return { map, activeCounts };
+  }, [indexed]);
+
   return (
     <div className="space-y-2">
       {/* Nav */}
@@ -107,9 +153,8 @@ export function WeekCalendar({
       <div className={`space-y-2 ${mobileView === 'list' ? 'block' : 'hidden'}`}>
         {days.map((day) => {
           const isToday = isSameDay(day, today);
-          const dayBookings = bookings
-            .filter((b) => isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day))
-            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+          const dayKey = format(day, 'yyyy-MM-dd');
+          const dayBookings = byDay.map.get(dayKey) ?? [];
           return (
             <div
               key={day.toISOString()}
@@ -137,12 +182,12 @@ export function WeekCalendar({
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/40 ${b.status === 'CANCELLED' || b.status === 'NO_SHOW' ? 'opacity-50 line-through' : ''}`}
                       >
                         <span className="font-mono text-xs font-semibold w-12">
-                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')}
+                          {`${String(Math.floor(b._startMin / 60)).padStart(2, '0')}:${String(b._startMin % 60).padStart(2, '0')}`}
                         </span>
                         <span className="flex-1 min-w-0">
-                          <span className="font-medium">{animalLabel(b)}</span>
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            · {(b.service.name.split('—')[0] ?? '').trim()}
+                          <span className="block font-medium truncate">{b.customerName || animalLabel(b)}</span>
+                          <span className="block text-xs text-muted-foreground truncate">
+                            {formatServiceLabel(b)}
                           </span>
                         </span>
                         <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
@@ -173,11 +218,8 @@ export function WeekCalendar({
             <div className="border-r" />
             {days.map((day) => {
               const isToday = isSameDay(day, today);
-              const count = bookings.filter(
-                (b) =>
-                  isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day) &&
-                  ['CONFIRMED', 'PENDING'].includes(b.status),
-              ).length;
+              const dayKey = format(day, 'yyyy-MM-dd');
+              const count = byDay.activeCounts.get(dayKey) ?? 0;
               return (
                 <div
                   key={day.toISOString()}
@@ -213,7 +255,7 @@ export function WeekCalendar({
               {hours.map((h) => (
                 <div
                   key={h}
-                  className="absolute right-1 -translate-y-1.5 text-[9px] leading-none text-muted-foreground"
+                  className="absolute right-1 -translate-y-1.5 text-[10px] font-medium leading-none text-muted-foreground"
                   style={{ top: `${(h - START_HOUR) * HOUR_HEIGHT_PX}px` }}
                 >
                   {h}
@@ -223,9 +265,8 @@ export function WeekCalendar({
 
             {/* Day columns */}
             {days.map((day) => {
-              const dayBookings = bookings.filter((b) =>
-                isSameDay(toZonedTime(b.startsAt, APP_TIMEZONE), day),
-              );
+              const dayKey = format(day, 'yyyy-MM-dd');
+              const dayBookings = byDay.map.get(dayKey) ?? [];
               const isToday = isSameDay(day, today);
 
               return (
@@ -268,24 +309,27 @@ export function WeekCalendar({
 
                   {/* Bookings */}
                   {dayBookings.map((b) => {
-                    const startMin = toLocalMinutes(b.startsAt);
-                    const endMin = toLocalMinutes(b.endsAt);
-                    const top = minuteToTop(startMin);
-                    const height = Math.max(durationToHeight(endMin - startMin), 18);
+                    const top = minuteToTop(b._startMin);
+                    const height = Math.max(durationToHeight(b._endMin - b._startMin), 18);
                     return (
                       <button
                         key={b.id}
                         type="button"
                         onClick={() => setSelected(selected?.id === b.id ? null : b)}
-                        className={`absolute left-0.5 right-0.5 overflow-hidden rounded border px-1 py-0.5 text-left leading-tight transition-shadow hover:shadow-md ${statusColor[b.status]}`}
-                        style={{ top: `${top}px`, height: `${height}px` }}
+                        className={`absolute left-1 right-1 flex flex-col justify-center overflow-hidden rounded border border-l-[4px] px-2 py-0.5 text-left leading-tight shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-all hover:shadow-md hover:-translate-y-px hover:z-10 ${statusColor[b.status]}`}
+                        style={{ top: `${top + 1}px`, height: `${Math.max(height - 2, 16)}px` }}
                       >
-                        <div className="text-[9px] font-semibold sm:text-[10px]">
-                          {format(toZonedTime(b.startsAt, APP_TIMEZONE), 'HH:mm')}
+                        <div className="text-[10px] font-semibold sm:text-[11px]">
+                          {`${String(Math.floor(b._startMin / 60)).padStart(2, '0')}:${String(b._startMin % 60).padStart(2, '0')}`}
                         </div>
-                        {height > 26 && (
-                          <div className="truncate text-[9px] opacity-80 sm:text-[10px]">
-                            {animalLabel(b)}
+                        {height > 28 && (
+                          <div className="truncate text-[10px] font-medium sm:text-[11px]">
+                            {b.customerName || animalLabel(b)}
+                          </div>
+                        )}
+                        {height > 50 && (
+                          <div className="truncate text-[9px] opacity-75 sm:text-[10px]">
+                            {formatServiceLabel(b)}
                           </div>
                         )}
                       </button>
@@ -302,20 +346,20 @@ export function WeekCalendar({
 
       {/* Legend — grid view */}
       <div className={`flex-wrap gap-3 text-xs text-muted-foreground ${mobileView === 'grid' ? 'flex' : 'hidden'}`}>
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded-sm bg-green-50 border border-green-200" />
           Orario apertura
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded-sm bg-emerald-100 border border-emerald-200" />
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-1 rounded-sm bg-emerald-500" />
           Confermata
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber-100 border border-amber-200" />
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-1 rounded-sm bg-amber-500" />
           In attesa
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded-sm bg-gray-100 border border-gray-200" />
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-1 rounded-sm bg-slate-400" />
           Completata
         </span>
       </div>

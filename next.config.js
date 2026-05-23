@@ -2,8 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: true },
   experimental: {
     serverActions: {
       bodySizeLimit: '1mb',

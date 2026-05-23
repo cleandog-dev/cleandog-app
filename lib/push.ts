@@ -42,48 +42,56 @@ async function sendOne(
   event: NotificationEvent,
   scope: 'ADMIN' | 'CLIENT',
   bookingId?: string,
-): Promise<void> {
+): Promise<boolean> {
+  const payloadStr = JSON.stringify(payload);
   try {
     await webpush.sendNotification(
       {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       },
-      JSON.stringify(payload),
+      payloadStr,
       { urgency: 'high', TTL: 60 },
     );
-    await prisma.pushSubscription.update({
-      where: { id: sub.id },
-      data: { lastUsedAt: new Date() },
-    });
-    await prisma.notificationLog.create({
-      data: {
-        event,
-        scope,
-        bookingId: bookingId ?? null,
-        subscriptionId: sub.id,
-        status: 'SENT',
-        payload: JSON.stringify(payload),
-      },
-    });
+    await Promise.all([
+      prisma.pushSubscription.update({
+        where: { id: sub.id },
+        data: { lastUsedAt: new Date() },
+      }).catch(() => {}),
+      prisma.notificationLog.create({
+        data: {
+          event,
+          scope,
+          bookingId: bookingId ?? null,
+          subscriptionId: sub.id,
+          status: 'SENT',
+          payload: payloadStr,
+        },
+      }).catch(() => {}),
+    ]);
+    return true;
   } catch (err: unknown) {
     const e = err as { statusCode?: number; message?: string };
     const gone = e.statusCode === 404 || e.statusCode === 410;
+    const cleanups: Array<Promise<unknown>> = [];
     if (gone) {
-      // Subscription expired/revoked — purge
-      await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+      cleanups.push(prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {}));
     }
-    await prisma.notificationLog.create({
-      data: {
-        event,
-        scope,
-        bookingId: bookingId ?? null,
-        subscriptionId: sub.id,
-        status: 'FAILED',
-        error: `${e.statusCode ?? '?'}: ${e.message ?? 'unknown'}`,
-        payload: JSON.stringify(payload),
-      },
-    });
+    cleanups.push(
+      prisma.notificationLog.create({
+        data: {
+          event,
+          scope,
+          bookingId: bookingId ?? null,
+          subscriptionId: sub.id,
+          status: 'FAILED',
+          error: `${e.statusCode ?? '?'}: ${e.message ?? 'unknown'}`,
+          payload: payloadStr,
+        },
+      }).catch(() => {}),
+    );
+    await Promise.all(cleanups);
+    return false;
   }
 }
 
@@ -103,14 +111,11 @@ export async function pushToAdmins(
     return { sent: 0, failed: 0, skipped: 1 };
   }
 
-  let sent = 0, failed = 0;
-  for (const sub of subs) {
-    const before = await prisma.notificationLog.count({ where: { subscriptionId: sub.id, status: 'SENT' } });
-    await sendOne(sub, payload, event, 'ADMIN', bookingId);
-    const after = await prisma.notificationLog.count({ where: { subscriptionId: sub.id, status: 'SENT' } });
-    if (after > before) sent++; else failed++;
-  }
-  return { sent, failed, skipped: 0 };
+  const results = await Promise.all(
+    subs.map((sub) => sendOne(sub, payload, event, 'ADMIN', bookingId)),
+  );
+  const sent = results.filter(Boolean).length;
+  return { sent, failed: results.length - sent, skipped: 0 };
 }
 
 export async function pushToClientPhone(
@@ -132,12 +137,9 @@ export async function pushToClientPhone(
     return { sent: 0, failed: 0, skipped: 1 };
   }
 
-  let sent = 0, failed = 0;
-  for (const sub of subs) {
-    const before = await prisma.notificationLog.count({ where: { subscriptionId: sub.id, status: 'SENT' } });
-    await sendOne(sub, payload, event, 'CLIENT', bookingId);
-    const after = await prisma.notificationLog.count({ where: { subscriptionId: sub.id, status: 'SENT' } });
-    if (after > before) sent++; else failed++;
-  }
-  return { sent, failed, skipped: 0 };
+  const results = await Promise.all(
+    subs.map((sub) => sendOne(sub, payload, event, 'CLIENT', bookingId)),
+  );
+  const sent = results.filter(Boolean).length;
+  return { sent, failed: results.length - sent, skipped: 0 };
 }

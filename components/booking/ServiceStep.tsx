@@ -107,11 +107,12 @@ export function ServiceStep({
   const mountedRef  = useRef(false);
 
   // Primary = isDefault service for animal (only one). Addons = others.
-  const primaryService = useMemo(
+  // NOTE: candidate lists ignore breed; visiblePrimary/visibleAddons below filter by breed activation.
+  const primaryCandidate = useMemo(
     () => services.find((s) => s.forAnimal === animal && s.isDefault && s.active) ?? null,
     [services, animal],
   );
-  const addonServices = useMemo(
+  const addonCandidates = useMemo(
     () => services
       .filter((s) => s.forAnimal === animal && s.active && !s.isDefault)
       .sort((a, b) => a.sortOrder - b.sortOrder),
@@ -171,6 +172,43 @@ export function ServiceStep({
   function lookupCells(breedId: string, serviceId: string): Record<string, BreedServicePriceEntry> | undefined {
     return priceMap?.[breedId]?.[serviceId];
   }
+
+  // Hide services not active for selected breed. FIXED-mode = always visible.
+  // PER_BREED-mode = at least one active cell required.
+  function isServiceActiveForBreed(s: Service, breedId: string): boolean {
+    if (s.pricingMode === 'FIXED') return true;
+    const cells = lookupCells(breedId, s.id);
+    if (!cells) return false;
+    return Object.values(cells).some((c) => c.active);
+  }
+
+  const primaryService = useMemo<Service | null>(() => {
+    if (!primaryCandidate) return null;
+    if (!selectedBreed) return primaryCandidate;
+    return isServiceActiveForBreed(primaryCandidate, selectedBreed.id) ? primaryCandidate : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primaryCandidate, selectedBreed, priceMap]);
+
+  const addonServices = useMemo<Service[]>(() => {
+    if (!selectedBreed) return addonCandidates;
+    return addonCandidates.filter((s) => isServiceActiveForBreed(s, selectedBreed.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addonCandidates, selectedBreed, priceMap]);
+
+  // Drop selected addons no longer visible after breed change
+  useEffect(() => {
+    if (!selectedBreed) return;
+    setSelectedAddonIds((prev) => {
+      const allowed = new Set(addonServices.map((s) => s.id));
+      const next = new Set<string>();
+      let changed = false;
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [selectedBreed, addonServices]);
 
   const breedSizes: BreedSizeOption[] = useMemo(
     () => (selectedBreed ? (sizesMap[selectedBreed.id] ?? []) : []),
@@ -331,7 +369,7 @@ export function ServiceStep({
                   borderRadius: 'var(--r-lg)',
                   border: sel ? '2px solid var(--sage-800)' : '1px solid var(--cream-300)',
                   background: sel ? 'var(--sage-100)' : 'var(--cream-50)',
-                  fontFamily: "'DM Sans', sans-serif",
+                  fontFamily: 'var(--font-dm-sans), sans-serif',
                   fontWeight: 700, fontSize: 16,
                   color: sel ? 'var(--sage-800)' : 'var(--ink-700)',
                   cursor: 'pointer',
@@ -432,6 +470,37 @@ export function ServiceStep({
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Sempre incluso (subito dopo razza) ── */}
+      {animal && selectedBreed && (
+        <div
+          style={{
+            borderRadius: 'var(--r-md)',
+            padding: '12px 14px 12px 16px',
+            background: 'white',
+            borderLeft: '3px solid var(--sage-800)',
+            border: '1px solid var(--cream-300)',
+            borderLeftWidth: 3,
+            borderLeftColor: 'var(--sage-800)',
+          }}
+        >
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--sage-800)',
+              marginBottom: 4,
+            }}
+          >
+            ✓ Sempre incluso
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+            Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
+          </p>
         </div>
       )}
 
@@ -538,7 +607,7 @@ export function ServiceStep({
                     </p>
                   )}
                 </div>
-                <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontFamily: 'var(--font-cormorant), serif', fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap' }}>
                   {p > 0 ? (
                     <>
                       <span style={{ fontSize: 11, fontStyle: 'italic', marginRight: 3, opacity: 0.7 }}>da</span>
@@ -588,7 +657,7 @@ export function ServiceStep({
                           <p style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>{svc.description}</p>
                         )}
                       </div>
-                      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap', marginRight: sel ? 6 : 0 }}>
+                      <span style={{ fontFamily: 'var(--font-cormorant), serif', fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap', marginRight: sel ? 6 : 0 }}>
                         {p > 0 ? (
                           <>
                             <span style={{ fontSize: 11, fontStyle: 'italic', marginRight: 3, opacity: 0.7 }}>+</span>
@@ -651,7 +720,7 @@ export function ServiceStep({
                       {e.name}
                     </span>
                   </div>
-                  <span style={{ fontSize: 14, fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: 'var(--brown-600)' }}>
+                  <span style={{ fontSize: 14, fontFamily: 'var(--font-cormorant), serif', fontWeight: 600, color: 'var(--brown-600)' }}>
                     +{(e.priceCents / 100).toFixed(2).replace('.00', '')} €
                   </span>
                 </label>
@@ -661,50 +730,19 @@ export function ServiceStep({
         </div>
       )}
 
-      {/* ── Sempre incluso ── */}
-      {animal && selectedBreed && (primaryService || selectedAddonIds.size > 0) && (
-        <div
-          style={{
-            borderRadius: 'var(--r-md)',
-            padding: '12px 14px 12px 16px',
-            background: 'white',
-            borderLeft: '3px solid var(--sage-800)',
-            border: '1px solid var(--cream-300)',
-            borderLeftWidth: 3,
-            borderLeftColor: 'var(--sage-800)',
-          }}
-        >
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--sage-800)',
-              marginBottom: 4,
-            }}
-          >
-            ✓ Sempre incluso
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
-            Pulizia orecchie · Svuotamento sacche anali · Sistemazione unghie
-          </p>
-        </div>
-      )}
-
       {/* ── CTA ── */}
       {animal && selectedBreed && (primaryService || addonServices.length > 0) && (
         <div>
           {totalPrice && (
             <>
               <p style={{ fontSize: 12, color: 'var(--ink-500)', fontStyle: 'italic', marginBottom: 8, lineHeight: 1.5, textAlign: 'center' }}>
-                Il prezzo finale è sempre concordato in negozio, a discrezione del personale in base alle condizioni dell&apos;animale.
+                <strong style={{ fontStyle: 'normal', color: 'var(--ink-700)' }}>N.B.</strong> *Il prezzo finale è sempre concordato in negozio, a discrezione del personale in base alle condizioni dell&apos;animale.
               </p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
                 <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                   Prezzo indicativo{extraTotal > 0 ? ` (inclusi extra)` : ''}
                 </span>
-                <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontFamily: 'var(--font-cormorant), serif', fontWeight: 700, color: 'var(--brown-700)', whiteSpace: 'nowrap' }}>
                   <span style={{ fontSize: 14, fontStyle: 'italic', marginRight: 4, opacity: 0.7 }}>da</span>
                   <span style={{ fontSize: 28 }}>{totalPrice.min} €</span>
                 </span>

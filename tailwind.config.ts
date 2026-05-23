@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import animate from 'tailwindcss-animate';
 
 const config: Config = {
   darkMode: ['class'],
@@ -11,9 +12,9 @@ const config: Config = {
     container: { center: true, padding: '1rem', screens: { '2xl': '1400px' } },
     extend: {
       fontFamily: {
-        display: ['Cormorant Garamond', 'Georgia', 'serif'],
-        sans: ['DM Sans', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        body: ['DM Sans', 'sans-serif'],
+        display: ['var(--font-cormorant)', 'Georgia', 'serif'],
+        sans: ['var(--font-dm-sans)', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        body: ['var(--font-dm-sans)', 'sans-serif'],
       },
       colors: {
         /* shadcn compat */
@@ -79,7 +80,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [animate],
 };
 
 export default config;

@@ -8,11 +8,6 @@ function toEntry(b: {
   animalType: string;
   size: string | null;
   coatType: string | null;
-  priceMin: number;
-  priceMax: number;
-  priceTrim: number | null;
-  priceTrimLong: number | null;
-  priceTouchUp: number | null;
 }): BreedEntry {
   return {
     id: b.id,
@@ -20,18 +15,22 @@ function toEntry(b: {
     animalType: b.animalType as AnimalType,
     size: (b.size as SizeCategory | null) ?? null,
     coatType: (b.coatType as CoatType | null) ?? null,
-    priceMin: b.priceMin,
-    priceMax: b.priceMax,
-    priceTrim: b.priceTrim,
-    priceTrimLong: b.priceTrimLong,
-    priceTouchUp: b.priceTouchUp,
   };
 }
+
+const BREED_ENTRY_SELECT = {
+  id: true,
+  name: true,
+  animalType: true,
+  size: true,
+  coatType: true,
+} as const;
 
 export async function getDogBreeds(): Promise<BreedEntry[]> {
   const rows = await prisma.breed.findMany({
     where: { animalType: 'DOG', active: true },
     orderBy: [{ name: 'asc' }],
+    select: BREED_ENTRY_SELECT,
   });
   return rows.map(toEntry);
 }
@@ -40,24 +39,20 @@ export async function getCatBreeds(): Promise<BreedEntry[]> {
   const rows = await prisma.breed.findMany({
     where: { animalType: 'CAT', active: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: BREED_ENTRY_SELECT,
   });
   return rows.map(toEntry);
 }
 
-// Kept for back-compat — returns first cat breed
-export async function getCatBreed(): Promise<BreedEntry | null> {
-  const list = await getCatBreeds();
-  return list[0] ?? null;
-}
-
 export async function findBreedByName(name: string): Promise<BreedEntry | null> {
-  const row = await prisma.breed.findUnique({ where: { name } });
+  const row = await prisma.breed.findUnique({ where: { name }, select: BREED_ENTRY_SELECT });
   return row ? toEntry(row) : null;
 }
 
 export async function getAllBreedsAdmin(): Promise<BreedEntry[]> {
   const rows = await prisma.breed.findMany({
     orderBy: [{ animalType: 'asc' }, { name: 'asc' }],
+    select: BREED_ENTRY_SELECT,
   });
   return rows.map(toEntry);
 }

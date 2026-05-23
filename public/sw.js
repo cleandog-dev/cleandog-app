@@ -1,7 +1,10 @@
 // CleanDOG Service Worker — install + push notifications.
 // Online-only (no offline caching for now).
+// VERSION: bump this string to force-update SW on existing clients.
+const SW_VERSION = 'v3-2026-05-22';
 
 self.addEventListener('install', () => {
+  console.log('[sw]', SW_VERSION, 'installing');
   self.skipWaiting();
 });
 
@@ -9,9 +12,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('fetch', () => {
-  // Pass-through: let browser handle requests normally.
-});
+// Empty pass-through fetch handler.
+// Chrome PWA install criteria: needs a fetch listener registered.
+// Active interception (respondWith) is NOT required and can interfere
+// with Android Chrome's native install prompt — keep this listener empty.
+self.addEventListener('fetch', () => {});
 
 // ── Push event ────────────────────────────────────────────────
 self.addEventListener('push', (event) => {

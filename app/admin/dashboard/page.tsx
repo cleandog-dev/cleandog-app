@@ -3,7 +3,7 @@ import { BookingsTable } from '@/components/admin/BookingsTable';
 import { WeekCalendar } from '@/components/admin/WeekCalendar';
 import { NewBookingDialog } from '@/components/admin/NewBookingDialog';
 import { AutoRefresh } from '@/components/admin/AutoRefresh';
-import { getAllBreedsAdmin } from '@/lib/breeds-server';
+import { getAllBreedsAdmin, getPricesMapForAnimal } from '@/lib/breeds-server';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
@@ -34,7 +34,7 @@ export default async function AdminDashboardPage(
   const calEnd = new Date(startOfToday);
   calEnd.setDate(calEnd.getDate() + 28);
 
-  const [bookings, calendarBookings, totalUpcoming, totalToday, services, breeds] = await Promise.all([
+  const [bookings, calendarBookings, totalUpcoming, totalToday, services, breeds, extras, dogPrices, catPrices] = await Promise.all([
     prisma.booking.findMany({
       where,
       orderBy: { startsAt: range === 'past' ? 'desc' : 'asc' },
@@ -48,6 +48,7 @@ export default async function AdminDashboardPage(
       },
       include: { service: true },
       orderBy: { startsAt: 'asc' },
+      take: 500,
     }),
     prisma.booking.count({
       where: { startsAt: { gte: startOfToday }, status: { in: ['PENDING', 'CONFIRMED'] } },
@@ -58,13 +59,18 @@ export default async function AdminDashboardPage(
         status: { in: ['PENDING', 'CONFIRMED'] },
       },
     }),
-    prisma.service.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
+    prisma.service.findMany({ where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } }),
     getAllBreedsAdmin(),
+    prisma.extra.findMany({ where: { active: true }, orderBy: { name: 'asc' } }),
+    getPricesMapForAnimal('DOG'),
+    getPricesMapForAnimal('CAT'),
   ]);
+
+  const pricesByAnimal = { DOG: dogPrices, CAT: catPrices };
 
   return (
     <div className="space-y-3 sm:space-y-3">
-      <AutoRefresh intervalMs={60_000} />
+      <AutoRefresh intervalMs={180_000} />
 
       {/* Top bar: title + stats + new booking in single row on desktop */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -74,7 +80,7 @@ export default async function AdminDashboardPage(
             <p className="text-[11px] text-muted-foreground sm:text-xs">CleanDOG · Messina</p>
           </div>
           <div className="sm:hidden">
-            <NewBookingDialog services={services} breeds={breeds} />
+            <NewBookingDialog services={services} breeds={breeds} extras={extras} pricesByAnimal={pricesByAnimal} />
           </div>
         </div>
 
@@ -86,7 +92,7 @@ export default async function AdminDashboardPage(
         </div>
 
         <div className="hidden sm:block">
-          <NewBookingDialog services={services} breeds={breeds} />
+          <NewBookingDialog services={services} breeds={breeds} extras={extras} pricesByAnimal={pricesByAnimal} />
         </div>
       </div>
 
