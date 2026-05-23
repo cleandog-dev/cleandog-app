@@ -24,7 +24,8 @@ function detectPlatform(): Platform {
 export function InstallPWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<BIPEvent | null>(null);
   const [platform, setPlatform] = useState<Platform | null>(null);
-  const [mode, setMode] = useState<Mode>('pending');
+  // mode state drives 2s fallback timer; value not read in render
+  const [, setMode] = useState<Mode>('pending');
   const [showHint, setShowHint] = useState(false);
   const [ready, setReady] = useState(false);
   const [hidden, setHidden] = useState(true);
