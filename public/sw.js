@@ -1,7 +1,7 @@
 // CleanDOG Service Worker — install + push notifications.
 // Online-only (no offline caching for now).
 // VERSION: bump this string to force-update SW on existing clients.
-const SW_VERSION = 'v3-2026-05-22';
+const SW_VERSION = 'v4-2026-05-27';
 
 self.addEventListener('install', () => {
   console.log('[sw]', SW_VERSION, 'installing');
@@ -9,7 +9,14 @@ self.addEventListener('install', () => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  // Nuke any leftover Cache Storage from older SW versions that used respondWith+cache.
+  // Stale RSC multipart payloads cached by old SWs leak as raw text on next render.
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))),
+    ]),
+  );
 });
 
 // Empty pass-through fetch handler.

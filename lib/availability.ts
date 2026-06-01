@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { addMinutes, format, startOfDay, endOfDay } from 'date-fns';
 import { APP_TIMEZONE } from '@/lib/utils';
-import { getSlotStepMin } from '@/lib/settings';
+import { getSlotStepMin, getMaxConcurrentBookings } from '@/lib/settings';
 
 export interface Slot {
   startISO: string; // UTC ISO
@@ -83,8 +83,8 @@ export async function getAvailableSlots(params: {
   const zonedMidnight = toZonedTime(localMidnight, APP_TIMEZONE);
   const dayOfWeek = zonedMidnight.getDay();
 
-  // Parallel: opening hours + closures + bookings + slot step setting.
-  const [openings, closures, bookings, SLOT_STEP_MIN] = await Promise.all([
+  // Parallel: opening hours + closures + bookings + slot step + max concurrent.
+  const [openings, closures, bookings, SLOT_STEP_MIN, MAX_CONCURRENT] = await Promise.all([
     prisma.openingHour.findMany({ where: { dayOfWeek, active: true } }),
     prisma.closure.findMany({
       where: { AND: [{ startsAt: { lt: localDayEnd } }, { endsAt: { gt: localMidnight } }] },
@@ -98,6 +98,7 @@ export async function getAvailableSlots(params: {
       select: { startsAt: true, endsAt: true },
     }),
     getSlotStepMin(),
+    getMaxConcurrentBookings(),
   ]);
   if (openings.length === 0) return [];
 
@@ -129,11 +130,11 @@ export async function getAvailableSlots(params: {
         continue;
       }
 
-      // Booking overlap (buffer already in totalMin)
-      const overlap = bookings.some(
+      // Booking overlap (buffer already in totalMin). Slot busy only if count >= capacity.
+      const overlapping = bookings.filter(
         (b) => slotStart < b.endsAt && slotEnd > b.startsAt,
-      );
-      if (overlap) {
+      ).length;
+      if (overlapping >= MAX_CONCURRENT) {
         cursor = addMinutes(cursor, SLOT_STEP_MIN);
         continue;
       }

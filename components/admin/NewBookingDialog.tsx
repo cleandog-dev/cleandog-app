@@ -558,6 +558,9 @@ export function NewBookingDialog({
                       const isSel = timeOnly === s.time;
                       const isBusy = s.status === 'busy';
                       const isClosed = s.status === 'closed';
+                      const capacity = s.capacity ?? 1;
+                      const busyCount = s.busyCount ?? 0;
+                      const showBadge = capacity > 1 && (busyCount > 0 || isBusy);
                       const cls = isSel
                         ? 'bg-primary text-primary-foreground border-primary ring-2 ring-primary/30'
                         : isBusy
@@ -565,15 +568,31 @@ export function NewBookingDialog({
                           : isClosed
                             ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
                             : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100';
+                      const title = isBusy
+                        ? `Pieno (${busyCount}/${capacity}): ${s.busyWith ?? ''}`
+                        : isClosed
+                          ? 'Chiuso'
+                          : busyCount > 0
+                            ? `Libero (${busyCount}/${capacity} occupati): ${s.busyWith ?? ''}`
+                            : 'Libero';
                       return (
                         <button
                           key={s.time}
                           type="button"
-                          title={isBusy ? `Occupato: ${s.busyWith}` : isClosed ? 'Chiuso' : 'Libero'}
+                          title={title}
                           onClick={() => setDraft({ ...draft, startsAt: `${dateOnly}T${s.time}` })}
-                          className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${cls}`}
+                          className={`relative rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${cls}`}
                         >
                           {s.time}
+                          {showBadge && (
+                            <span
+                              className={`absolute -right-1 -top-1 rounded-full px-1 text-[9px] font-bold leading-tight ${
+                                isBusy ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+                              }`}
+                            >
+                              {busyCount}/{capacity}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -583,7 +602,7 @@ export function NewBookingDialog({
                       <span className="inline-block h-2 w-2 rounded-sm bg-emerald-300" /> libero
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-red-300" /> occupato
+                      <span className="inline-block h-2 w-2 rounded-sm bg-red-300" /> pieno
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="inline-block h-2 w-2 rounded-sm bg-amber-300" /> chiuso
@@ -592,10 +611,12 @@ export function NewBookingDialog({
                   {(() => {
                     const selected = slots.find((s) => s.time === timeOnly);
                     if (!selected) return null;
+                    const cap = selected.capacity ?? 1;
+                    const bc = selected.busyCount ?? 0;
                     if (selected.status === 'busy') {
                       return (
                         <div className="mt-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800">
-                          ⚠ Slot occupato da <strong>{selected.busyWith}</strong>. Sarà richiesta conferma &quot;Forza creazione&quot; al salvataggio.
+                          ⚠ Slot pieno ({bc}/{cap}): <strong>{selected.busyWith}</strong>. Sarà richiesta conferma &quot;Forza creazione&quot; al salvataggio.
                         </div>
                       );
                     }
@@ -603,6 +624,13 @@ export function NewBookingDialog({
                       return (
                         <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
                           ⚠ Negozio chiuso. Sarà richiesta conferma &quot;Forza creazione&quot; al salvataggio.
+                        </div>
+                      );
+                    }
+                    if (bc > 0 && cap > 1) {
+                      return (
+                        <div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-800">
+                          ✓ Slot disponibile ({bc}/{cap} occupati): <strong>{selected.busyWith}</strong>. Postazione libera ancora prenotabile.
                         </div>
                       );
                     }
@@ -625,12 +653,12 @@ export function NewBookingDialog({
             {warning && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
                 <p className="font-medium text-amber-800">
-                  {warning === 'CLOSED' ? 'Negozio chiuso' : 'Sovrapposizione orari'}
+                  {warning === 'CLOSED' ? 'Negozio chiuso' : 'Slot pieno'}
                 </p>
                 <p className="mt-1 text-xs text-amber-700">
                   {warning === 'CLOSED'
                     ? 'In quella fascia c\'è una chiusura attiva. Forzare comunque?'
-                    : 'Esiste già una prenotazione in quella fascia. Forzare comunque?'}
+                    : 'Tutte le postazioni sono occupate in quella fascia. Forzare comunque?'}
                 </p>
                 <Button
                   size="sm"

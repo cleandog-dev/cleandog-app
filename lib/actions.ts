@@ -21,7 +21,7 @@ import { sendBookingConfirmation } from '@/lib/email';
 import { auth } from '@/lib/auth';
 import { findBreedByName, getBreedWithServicePrices, type BreedServicePriceRow, type BreedSizeOptionDTO } from '@/lib/breeds-server';
 import { parseExtraNamesFromNotes } from '@/lib/utils';
-import { getSlotStepMin } from '@/lib/settings';
+import { getSlotStepMin, getMaxConcurrentBookings } from '@/lib/settings';
 import { pushToAdmins, pushToClientPhone } from '@/lib/push';
 import {
   buildBookingCreatedAdminPayload,
@@ -96,16 +96,18 @@ export async function createBookingAction(
       });
       if (closure) throw new Error('CLOSED');
 
-      // Overlap check
-      const overlap = await tx.booking.findFirst({
-        where: {
-          status: { in: ['PENDING', 'CONFIRMED'] },
-          startsAt: { lt: endsAt },
-          endsAt: { gt: startsAt },
-        },
-        select: { id: true },
-      });
-      if (overlap) throw new Error('OVERLAP');
+      // Capacity check: count overlapping bookings; reject if >= max concurrent.
+      const [overlapCount, maxConcurrent] = await Promise.all([
+        tx.booking.count({
+          where: {
+            status: { in: ['PENDING', 'CONFIRMED'] },
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+        }),
+        getMaxConcurrentBookings(),
+      ]);
+      if (overlapCount >= maxConcurrent) throw new Error('OVERLAP');
 
       // Resolve dogSize for legacy snapshot
       let dogSize: 'SMALL' | 'MEDIUM' | 'LARGE' | null = null;
@@ -255,15 +257,17 @@ export async function adminCreateBookingAction(
         });
         if (closure) throw new Error('CLOSED');
 
-        const overlap = await tx.booking.findFirst({
-          where: {
-            status: { in: ['PENDING', 'CONFIRMED'] },
-            startsAt: { lt: endsAt },
-            endsAt: { gt: startsAt },
-          },
-          select: { id: true },
-        });
-        if (overlap) throw new Error('OVERLAP');
+        const [overlapCount, maxConcurrent] = await Promise.all([
+          tx.booking.count({
+            where: {
+              status: { in: ['PENDING', 'CONFIRMED'] },
+              startsAt: { lt: endsAt },
+              endsAt: { gt: startsAt },
+            },
+          }),
+          getMaxConcurrentBookings(),
+        ]);
+        if (overlapCount >= maxConcurrent) throw new Error('OVERLAP');
       }
 
       let dogSize: 'SMALL' | 'MEDIUM' | 'LARGE' | null = null;
@@ -432,16 +436,19 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // Overlap check (exclude self)
-      const overlap = await tx.booking.findFirst({
-        where: {
-          id: { not: booking.id },
-          status: { in: ['PENDING', 'CONFIRMED'] },
-          startsAt: { lt: endsAt },
-          endsAt: { gt: startsAt },
-        },
-      });
-      if (overlap) throw new Error('OVERLAP');
+      // Capacity check (exclude self)
+      const [overlapCount, maxConcurrent] = await Promise.all([
+        tx.booking.count({
+          where: {
+            id: { not: booking.id },
+            status: { in: ['PENDING', 'CONFIRMED'] },
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+        }),
+        getMaxConcurrentBookings(),
+      ]);
+      if (overlapCount >= maxConcurrent) throw new Error('OVERLAP');
 
       await tx.booking.update({
         where: { id: booking.id },
@@ -655,7 +662,10 @@ export type DaySlot = {
   time: string;          // HH:mm
   startISO: string;      // UTC ISO
   status: 'free' | 'busy' | 'closed' | 'outside';
-  busyWith?: string;     // dog name if busy
+  busyWith?: string;     // joined dog names (back-compat: 'foo, bar')
+  busyCount?: number;    // how many bookings overlap this slot
+  capacity?: number;     // max concurrent at compute time
+  busyDogs?: string[];   // individual dog names occupying the slot
 };
 
 export async function getDayOverviewAction({
@@ -677,7 +687,7 @@ export async function getDayOverviewAction({
   const localDayEnd = fromZonedTime(`${date}T23:59:59`, APP_TIMEZONE);
   const dayOfWeek = toZonedTime(localMidnight, APP_TIMEZONE).getDay();
 
-  const [openings, closures, bookings] = await Promise.all([
+  const [openings, closures, bookings, SLOT_STEP, MAX_CONCURRENT] = await Promise.all([
     prisma.openingHour.findMany({ where: { dayOfWeek, active: true } }),
     prisma.closure.findMany({
       where: { AND: [{ startsAt: { lt: localDayEnd } }, { endsAt: { gt: localMidnight } }] },
@@ -690,9 +700,9 @@ export async function getDayOverviewAction({
       },
       select: { startsAt: true, endsAt: true, dogName: true, dogBreed: true },
     }),
+    getSlotStepMin(),
+    getMaxConcurrentBookings(),
   ]);
-
-  const SLOT_STEP = await getSlotStepMin();
   const START_H = 8;
   const END_H = 20;
   const dur = service.durationMin;
@@ -722,20 +732,33 @@ export async function getDayOverviewAction({
       continue;
     }
 
-    const conflict = bookings.find(
+    const overlapping = bookings.filter(
       (b) => slotStart < b.endsAt && slotEnd > b.startsAt,
     );
-    if (conflict) {
+    const busyCount = overlapping.length;
+    const busyDogs = overlapping.map((b) => b.dogName || b.dogBreed || 'occupato');
+    if (busyCount >= MAX_CONCURRENT) {
       result.push({
         time,
         startISO,
         status: 'busy',
-        busyWith: conflict.dogName || conflict.dogBreed || 'occupato',
+        busyWith: busyDogs.join(', '),
+        busyCount,
+        capacity: MAX_CONCURRENT,
+        busyDogs,
       });
       continue;
     }
 
-    result.push({ time, startISO, status: 'free' });
+    result.push({
+      time,
+      startISO,
+      status: 'free',
+      busyCount,
+      capacity: MAX_CONCURRENT,
+      busyDogs: busyCount > 0 ? busyDogs : undefined,
+      busyWith: busyCount > 0 ? busyDogs.join(', ') : undefined,
+    });
   }
 
   return { ok: true, data: result };
@@ -1120,6 +1143,24 @@ export async function setSlotStepMinAction(min: number): Promise<ActionResult> {
     update: { value: String(min) },
   });
   revalidatePath('/admin/hours');
+  revalidatePath('/prenota');
+  return { ok: true, data: null };
+}
+
+// ── Admin: save max concurrent bookings (postazioni in parallelo) ──
+export async function setMaxConcurrentBookingsAction(max: number): Promise<ActionResult> {
+  await requireAdmin();
+  if (!Number.isInteger(max) || max < 1 || max > 10) {
+    return { ok: false, error: 'Valore non valido (1-10 postazioni)' };
+  }
+  await prisma.setting.upsert({
+    where: { key: 'max_concurrent_bookings' },
+    create: { key: 'max_concurrent_bookings', value: String(max) },
+    update: { value: String(max) },
+  });
+  revalidatePath('/admin/hours');
+  revalidatePath('/admin/dashboard');
+  revalidatePath('/admin/staff');
   revalidatePath('/prenota');
   return { ok: true, data: null };
 }

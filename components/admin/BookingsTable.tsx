@@ -8,6 +8,13 @@ import type { Booking, Service, BookingStatus } from '@prisma/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { APP_TIMEZONE, formatEUR, animalLabel } from '@/lib/utils';
 import {
   updateBookingStatusAction,
@@ -49,6 +56,7 @@ export function BookingsTable({
 
   const [selected, setSelected] = useState<Row | null>(null);
   const [selectedMode, setSelectedMode] = useState<'view' | 'edit'>('view');
+  const [confirmDelete, setConfirmDelete] = useState<Row | null>(null);
 
   function openDetail(b: Row, mode: 'view' | 'edit' = 'view') {
     setSelectedMode(mode);
@@ -63,12 +71,14 @@ export function BookingsTable({
     });
   }
 
-  function remove(id: string) {
-    if (!confirm('Eliminare definitivamente questa prenotazione?')) return;
+  function performDelete() {
+    if (!confirmDelete) return;
+    const id = confirmDelete.id;
     startTransition(async () => {
       const r = await deleteBookingAction(id);
       if (!r.ok) toast({ title: 'Errore', description: r.error, variant: 'destructive' });
-      else toast({ title: 'Eliminata' });
+      else toast({ title: 'Prenotazione eliminata' });
+      setConfirmDelete(null);
     });
   }
 
@@ -168,7 +178,7 @@ export function BookingsTable({
                             size="sm"
                             variant="ghost"
                             disabled={pending}
-                            onClick={() => remove(b.id)}
+                            onClick={() => setConfirmDelete(b)}
                           >
                             🗑
                           </Button>
@@ -188,6 +198,43 @@ export function BookingsTable({
         onClose={() => setSelected(null)}
         initialMode={selectedMode}
       />
+
+      <Dialog open={!!confirmDelete} onOpenChange={(o) => { if (!o && !pending) setConfirmDelete(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Eliminare la prenotazione?</DialogTitle>
+          </DialogHeader>
+          {confirmDelete && (() => {
+            const local = toZonedTime(confirmDelete.startsAt, APP_TIMEZONE);
+            return (
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-semibold">{confirmDelete.customerName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {animalLabel(confirmDelete)} · {confirmDelete.service.name}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  📅 {format(local, 'dd/MM/yyyy')} alle {format(local, 'HH:mm')}
+                </p>
+              </div>
+            );
+          })()}
+          <p className="text-xs text-muted-foreground">
+            L&apos;operazione è definitiva e non può essere annullata. Per uno storico, imposta lo stato su <strong>Annullata</strong> invece di eliminare.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)} disabled={pending}>
+              Annulla
+            </Button>
+            <Button
+              onClick={performDelete}
+              disabled={pending}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {pending ? 'Elimino…' : 'Elimina definitivamente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

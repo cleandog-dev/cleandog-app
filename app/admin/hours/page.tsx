@@ -1,16 +1,18 @@
 import { prisma } from '@/lib/db';
 import { OpeningHoursManager } from '@/components/admin/OpeningHoursManager';
 import { SlotStepCard } from '@/components/admin/SlotStepCard';
+import { CapacityCard } from '@/components/admin/CapacityCard';
 import { ClosuresManager } from '@/components/admin/ClosuresManager';
-import { getSlotStepMin } from '@/lib/settings';
+import { getSlotStepMin, getMaxConcurrentBookings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Orari e chiusure' };
 
 export default async function AdminHoursPage() {
-  const [rows, slotStep, closures] = await Promise.all([
+  const [rows, slotStep, maxConcurrent, closures] = await Promise.all([
     prisma.openingHour.findMany(),
     getSlotStepMin(),
+    getMaxConcurrentBookings(),
     prisma.closure.findMany({
       where: { endsAt: { gte: new Date() } },
       orderBy: { startsAt: 'asc' },
@@ -26,6 +28,7 @@ export default async function AdminHoursPage() {
       </div>
 
       <SlotStepCard initial={slotStep} />
+      <CapacityCard initial={maxConcurrent} />
 
       <section className="space-y-2">
         <h2 className="text-base font-semibold">Orari settimanali</h2>

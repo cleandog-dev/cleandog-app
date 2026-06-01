@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { APP_TIMEZONE, animalLabel } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { BookingDetailDialog } from './BookingDetailDialog';
+import { assignLanes } from '@/lib/calendar-lanes';
 
 type Row = Booking & { service: Service };
 
@@ -90,6 +91,7 @@ export function WeekCalendar({
 
   // Pre-compute local date key per booking ONCE (toZonedTime is expensive).
   type Indexed = Row & { _localKey: string; _startMin: number; _endMin: number };
+  type LaidOut = Indexed & { laneIndex: number; laneCount: number };
   const indexed = useMemo<Indexed[]>(() => {
     return bookings.map((b) => {
       const localStart = toZonedTime(b.startsAt, APP_TIMEZONE);
@@ -103,19 +105,30 @@ export function WeekCalendar({
     });
   }, [bookings]);
 
-  // Group by local day key, plus active counts.
+  // Group by local day key, plus active counts. Assign adaptive lanes per day so
+  // overlapping blocks render side-by-side (50/50, 33/33/33, ...).
+  // Cancelled/no-show stay in their own lane (don't push active bookings to half-width)
+  // by separating layout: active bookings get lane assignment first, then non-active
+  // are appended with laneCount = 1 (full width, below if they overlap visually).
   const byDay = useMemo(() => {
-    const map = new Map<string, Indexed[]>();
+    const map = new Map<string, LaidOut[]>();
     const activeCounts = new Map<string, number>();
+    const groups = new Map<string, Indexed[]>();
     for (const b of indexed) {
-      const arr = map.get(b._localKey);
-      if (arr) arr.push(b); else map.set(b._localKey, [b]);
+      const arr = groups.get(b._localKey);
+      if (arr) arr.push(b); else groups.set(b._localKey, [b]);
       if (b.status === 'CONFIRMED' || b.status === 'PENDING') {
         activeCounts.set(b._localKey, (activeCounts.get(b._localKey) ?? 0) + 1);
       }
     }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    for (const [key, arr] of groups.entries()) {
+      const active = arr.filter((b) => b.status === 'CONFIRMED' || b.status === 'PENDING');
+      const inactive = arr.filter((b) => b.status !== 'CONFIRMED' && b.status !== 'PENDING');
+      const laidActive = assignLanes(active);
+      const laidInactive: LaidOut[] = inactive.map((b) => ({ ...b, laneIndex: 0, laneCount: 1 }));
+      const combined = [...laidActive, ...laidInactive];
+      combined.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+      map.set(key, combined);
     }
     return { map, activeCounts };
   }, [indexed]);
@@ -311,16 +324,30 @@ export function WeekCalendar({
                   {dayBookings.map((b) => {
                     const top = minuteToTop(b._startMin);
                     const height = Math.max(durationToHeight(b._endMin - b._startMin), 18);
+                    const widthPct = 100 / b.laneCount;
+                    const leftPct = b.laneIndex * widthPct;
                     return (
                       <button
                         key={b.id}
                         type="button"
                         onClick={() => setSelected(selected?.id === b.id ? null : b)}
-                        className={`absolute left-1 right-1 flex flex-col justify-center overflow-hidden rounded border border-l-[4px] px-2 py-0.5 text-left leading-tight shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-all hover:shadow-md hover:-translate-y-px hover:z-10 ${statusColor[b.status]}`}
-                        style={{ top: `${top + 1}px`, height: `${Math.max(height - 2, 16)}px` }}
+                        className={`absolute flex flex-col justify-center overflow-hidden rounded border border-l-[4px] px-2 py-0.5 text-left leading-tight shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-all hover:shadow-md hover:-translate-y-px hover:z-10 ${statusColor[b.status]}`}
+                        style={{
+                          top: `${top + 1}px`,
+                          height: `${Math.max(height - 2, 16)}px`,
+                          left: `calc(${leftPct}% + 2px)`,
+                          width: `calc(${widthPct}% - 4px)`,
+                        }}
                       >
-                        <div className="text-[10px] font-semibold sm:text-[11px]">
-                          {`${String(Math.floor(b._startMin / 60)).padStart(2, '0')}:${String(b._startMin % 60).padStart(2, '0')}`}
+                        <div className="flex items-center gap-1 text-[10px] font-semibold sm:text-[11px]">
+                          <span>
+                            {`${String(Math.floor(b._startMin / 60)).padStart(2, '0')}:${String(b._startMin % 60).padStart(2, '0')}`}
+                          </span>
+                          {b.laneCount > 1 && (
+                            <span className="rounded-sm bg-slate-200 px-1 text-[8px] font-bold leading-tight text-slate-700">
+                              {b.laneIndex + 1}/{b.laneCount}
+                            </span>
+                          )}
                         </div>
                         {height > 28 && (
                           <div className="truncate text-[10px] font-medium sm:text-[11px]">

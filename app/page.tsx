@@ -7,10 +7,52 @@ import { prisma } from '@/lib/db';
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const [services, dogPrices] = await Promise.all([
+  const [services, dogPrices, openingHours] = await Promise.all([
     prisma.service.findMany({ where: { active: true, deletedAt: null } }),
     getPricesMapForAnimal('DOG'),
+    prisma.openingHour.findMany({ orderBy: { dayOfWeek: 'asc' } }),
   ]);
+
+  // Build human-readable opening-hours lines from DB rows.
+  // Group consecutive days (Mon→Sun) that share the same open/close window.
+  const DAY_LABELS = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+  const DAY_SHORT  = ['Dom',      'Lun',     'Mar',     'Mer',       'Gio',     'Ven',     'Sab'    ];
+  const fmt = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  type DayWindow = { dow: number; open: number; close: number; active: boolean };
+  const byDow = new Map<number, DayWindow>();
+  for (const h of openingHours) {
+    byDow.set(h.dayOfWeek, { dow: h.dayOfWeek, open: h.openMinute, close: h.closeMinute, active: h.active });
+  }
+  // Iterate week starting Monday → Sunday (1..6,0)
+  const weekOrder = [1, 2, 3, 4, 5, 6, 0];
+  type HoursLine = { label: string; value: string; closed: boolean };
+  const hoursLines: HoursLine[] = [];
+  let runStart: number | null = null;
+  let runEnd: number | null = null;
+  let runKey: string | null = null;
+  const flush = () => {
+    if (runStart == null || runEnd == null) return;
+    const label = runStart === runEnd
+      ? DAY_LABELS[runStart]!
+      : `${DAY_SHORT[runStart]} – ${DAY_SHORT[runEnd]}`;
+    const row = byDow.get(runStart);
+    const closed = !row || !row.active;
+    const value = closed ? 'chiuso' : `${fmt(row!.open)} – ${fmt(row!.close)}`;
+    hoursLines.push({ label, value, closed });
+  };
+  for (const dow of weekOrder) {
+    const row = byDow.get(dow);
+    const key = row && row.active ? `${row.open}-${row.close}` : 'CLOSED';
+    if (runKey === null) {
+      runStart = dow; runEnd = dow; runKey = key;
+    } else if (key === runKey) {
+      runEnd = dow;
+    } else {
+      flush();
+      runStart = dow; runEnd = dow; runKey = key;
+    }
+  }
+  flush();
 
   // Compute min cents across breeds for a given service id (any size/coat cell).
   const minCentsForService = (
@@ -255,9 +297,15 @@ export default async function HomePage() {
                 <div className="flex items-start gap-3">
                   <span>🕐</span>
                   <div>
-                    <p>Lunedì – Venerdì: <strong>9:00 – 18:00</strong></p>
-                    <p>Sabato: <strong>9:00 – 13:00</strong></p>
-                    <p style={{ color: 'var(--ink-500)' }}>Domenica: chiuso</p>
+                    {hoursLines.length === 0 ? (
+                      <p style={{ color: 'var(--ink-500)' }}>Orari non disponibili</p>
+                    ) : (
+                      hoursLines.map((l) => (
+                        <p key={l.label} style={l.closed ? { color: 'var(--ink-500)' } : undefined}>
+                          {l.label}: {l.closed ? 'chiuso' : <strong>{l.value}</strong>}
+                        </p>
+                      ))
+                    )}
                   </div>
                 </div>
                 <a href="tel:0903354798" className="flex items-center gap-3">
