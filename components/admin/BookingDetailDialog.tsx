@@ -109,12 +109,13 @@ export function BookingDetailDialog({
   booking,
   onClose,
   initialMode = 'view',
-  isAdmin = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isAdmin: _isAdmin = false,
 }: {
   booking: Row | null;
   onClose: () => void;
   initialMode?: 'view' | 'edit';
-  // Quando true, mostra il toggle ADMIN-only per escludere il servizio base.
+  // Prop conservata per uso futuro role-aware (oggi il toggle è visibile a tutti).
   isAdmin?: boolean;
 }) {
   const [mode, setMode] = useState<'view' | 'edit'>(initialMode);

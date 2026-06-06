@@ -92,13 +92,14 @@ export function NewBookingDialog({
   breeds,
   extras,
   pricesByAnimal,
-  isAdmin = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isAdmin: _isAdmin = false,
 }: {
   services: Service[];
   breeds: BreedEntry[];
   extras: Extra[];
   pricesByAnimal: PricesByAnimal;
-  // Quando true, mostra il toggle "Escludi servizio base" sul card Base.
+  // Prop conservata per uso futuro role-aware (oggi il toggle è visibile a tutti).
   isAdmin?: boolean;
 }) {
   const [open, setOpen] = useState(false);

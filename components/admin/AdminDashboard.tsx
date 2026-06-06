@@ -63,7 +63,7 @@ export function AdminDashboard({
     router.push(buildUrl(period, 0));
   }
 
-  const { current, previous, revenueDeltaPct, visitsDeltaPct } = comparison;
+  const { current, previous, visitsDeltaPct } = comparison;
   const visits = current.completed + current.confirmed;
 
   return (
