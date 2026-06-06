@@ -15,8 +15,11 @@ export const authConfig = {
       return token;
     },
     async session({ session, token }) {
-      if (token.id && session.user) {
-        session.user.id = token.id as string;
+      if (session.user) {
+        if (token.id) session.user.id = token.id as string;
+        // Role: sempre dal token; fallback ADMIN per JWT legacy pre-RBAC
+        // (utenti che si erano loggati prima dell'aggiunta della role nel JWT).
+        // I nuovi STAFF hanno sempre token.role = 'STAFF' impostato in authorize().
         session.user.role = (token.role as 'ADMIN' | 'STAFF') ?? 'ADMIN';
       }
       return session;

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function ClosuresRedirect() {
-  redirect('/admin/hours');
+export default function AdminClosuresRedirect() {
+  redirect('/admin/impostazioni?tab=orari');
 }

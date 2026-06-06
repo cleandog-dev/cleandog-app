@@ -1,3 +1,4 @@
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { StaffTodayView } from '@/components/admin/StaffTodayView';
 import { WeekCalendar } from '@/components/admin/WeekCalendar';
@@ -8,12 +9,13 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Personale' };
 
 export default async function AdminStaffPage() {
+  const session = await auth();
+  const isAdmin = session?.user?.role === 'ADMIN';
   const now = new Date();
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date(startOfToday.getTime() + 86_400_000);
 
-  // Week range (current week ± buffer for calendar)
   const calStart = new Date(startOfToday);
   calStart.setDate(calStart.getDate() - 7);
   const calEnd = new Date(startOfToday);
@@ -85,14 +87,14 @@ export default async function AdminStaffPage() {
             {todayBookings.length === 0 ? 'nessuno' : `${todayBookings.length} appt.`}
           </span>
         </div>
-        <StaffTodayView bookings={todayBookings} />
+        <StaffTodayView bookings={todayBookings} isAdmin={isAdmin} />
       </section>
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Settimana
         </h2>
-        <WeekCalendar bookings={weekBookings} />
+        <WeekCalendar bookings={weekBookings} isAdmin={isAdmin} />
       </section>
     </div>
   );
@@ -112,7 +114,6 @@ function Stat({
   const color = accent === 'warning' ? 'text-amber-600' : accent === 'success' ? 'text-emerald-600' : 'text-primary';
   return (
     <>
-      {/* Mobile inline segmented; Desktop card */}
       <div className={`flex flex-col items-center justify-center py-3 sm:hidden ${hasDivider ? 'border-l' : ''}`}>
         <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
         <p className={`text-2xl font-bold leading-tight ${color}`}>{value}</p>

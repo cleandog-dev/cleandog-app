@@ -7,7 +7,10 @@ export const metadata = { title: 'Accesso' };
 
 export default async function LoginPage() {
   const session = await auth();
-  if (session?.user) redirect('/admin/dashboard');
+  // Già loggato: instrada direttamente in base al ruolo (no bounce via guard).
+  if (session?.user) {
+    redirect(session.user.role === 'STAFF' ? '/admin/staff' : '/admin');
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center px-5" style={{ background: 'var(--cream-100)' }}>

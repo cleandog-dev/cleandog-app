@@ -47,9 +47,11 @@ const statusLabel: Record<BookingStatus, string> = {
 export function BookingsTable({
   bookings,
   currentRange,
+  isAdmin = false,
 }: {
   bookings: Row[];
   currentRange: string;
+  isAdmin?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -93,7 +95,7 @@ export function BookingsTable({
               size="sm"
               variant={currentRange === r ? 'default' : 'outline'}
             >
-              <Link href={`/admin/dashboard?view=list&range=${r}`}>
+              <Link href={`/admin/prenotazioni?view=list&range=${r}`}>
                 {r === 'upcoming' ? 'Future' : r === 'past' ? 'Passate' : 'Tutte'}
               </Link>
             </Button>
@@ -197,6 +199,7 @@ export function BookingsTable({
         booking={selected}
         onClose={() => setSelected(null)}
         initialMode={selectedMode}
+        isAdmin={isAdmin}
       />
 
       <Dialog open={!!confirmDelete} onOpenChange={(o) => { if (!o && !pending) setConfirmDelete(null); }}>

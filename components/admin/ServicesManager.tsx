@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { upsertServiceAction, deleteServiceAction, recomputeBookingEndsAtAction, recomputeBookingPricesAction, moveServiceAction } from '@/lib/actions';
+import { upsertServiceAction, deleteServiceAction, moveServiceAction } from '@/lib/actions';
 import { NumericInput } from '@/components/ui/numeric-input';
 import { useToast } from '@/hooks/use-toast';
 import { formatDuration } from '@/lib/utils';
@@ -112,40 +112,6 @@ export function ServicesManager({ services, missingByService = {} }: { services:
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending}
-          onClick={() => {
-            startTransition(async () => {
-              const r = await recomputeBookingEndsAtAction();
-              if (!r.ok) {
-                toast({ title: 'Errore', description: r.error, variant: 'destructive' });
-                return;
-              }
-              toast({ title: `Aggiornati ${r.data.updated} appuntamenti` });
-            });
-          }}
-        >
-          🔄 Allinea durate
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending}
-          onClick={() => {
-            startTransition(async () => {
-              const r = await recomputeBookingPricesAction();
-              if (!r.ok) {
-                toast({ title: 'Errore', description: r.error, variant: 'destructive' });
-                return;
-              }
-              toast({ title: `Ricalcolati ${r.data.updated} prezzi` });
-            });
-          }}
-        >
-          💶 Allinea prezzi
-        </Button>
         <Button onClick={openNew} size="sm">+ Nuovo servizio</Button>
       </div>
 

@@ -5,23 +5,26 @@ import { logoutAction } from '@/lib/auth-actions';
 import { Logo } from '@/components/Logo';
 import { AdminNavDesktop, AdminNavMobile } from '@/components/admin/AdminNav';
 import { PushSubscribe } from '@/components/PushSubscribe';
+import { SessionProviderClient } from '@/components/SessionProviderClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect('/login');
+  const role = session.user.role;
 
   return (
+    <SessionProviderClient session={session}>
     <div className="min-h-screen" style={{ background: 'var(--cream-100)' }}>
       <header className="app-chrome">
         <div className="mx-auto max-w-screen-lg px-3 sm:px-5">
           <div className="flex h-12 sm:h-14 items-center justify-between">
             <div className="flex items-center gap-6">
-              <Link href="/admin/dashboard">
+              <Link href="/admin">
                 <Logo size={24} href={null} />
               </Link>
-              <AdminNavDesktop />
+              <AdminNavDesktop role={role} />
             </div>
             <form action={logoutAction}>
               <button type="submit" className="btn-ghost" style={{ color: 'var(--ink-500)', padding: '6px 12px', fontSize: 13 }}>
@@ -29,15 +32,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               </button>
             </form>
           </div>
-          <AdminNavMobile />
+          <AdminNavMobile role={role} />
         </div>
       </header>
       <main className="mx-auto max-w-screen-lg px-3 py-4 sm:px-5 sm:py-8">
-        <div className="mb-4">
-          <PushSubscribe scope="ADMIN" />
-        </div>
+        {/* Push notifications: solo ADMIN. STAFF non riceve i push admin
+            per evitare device "fantasma" non associabili al titolare. */}
+        {role === 'ADMIN' && (
+          <div className="mb-4">
+            <PushSubscribe scope="ADMIN" />
+          </div>
+        )}
         {children}
       </main>
     </div>
+    </SessionProviderClient>
   );
 }

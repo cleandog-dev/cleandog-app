@@ -32,3 +32,8 @@ prisma/*.db-journal
 .turbo
 coverage/
 .vercel
+
+# Claude Code internals
+.agents/
+.claude/
+skills-lock.json

@@ -1,14 +1,23 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import type { Booking, Service, BookingStatus } from '@prisma/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { APP_TIMEZONE, formatEUR, animalLabel } from '@/lib/utils';
-import { updateBookingStatusAction } from '@/lib/actions';
+import { updateBookingStatusAction, updateBookingPriceAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { BookingDetailDialog } from './BookingDetailDialog';
 
@@ -33,10 +42,35 @@ const statusLabel: Record<BookingStatus, string> = {
   NO_SHOW: 'No-show',
 };
 
-export function StaffTodayView({ bookings }: { bookings: Row[] }) {
+export function StaffTodayView({ bookings, isAdmin = false }: { bookings: Row[]; isAdmin?: boolean }) {
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Row | null>(null);
+  const [priceTarget, setPriceTarget] = useState<Row | null>(null);
+  const [priceInput, setPriceInput] = useState<string>('');
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (priceTarget) setPriceInput((priceTarget.priceCents / 100).toFixed(2));
+  }, [priceTarget]);
+
+  function savePrice() {
+    if (!priceTarget) return;
+    const eur = Number(priceInput.replace(',', '.'));
+    if (!Number.isFinite(eur) || eur < 0) {
+      toast({ title: 'Prezzo non valido', variant: 'destructive' });
+      return;
+    }
+    const cents = Math.round(eur * 100);
+    startTransition(async () => {
+      const r = await updateBookingPriceAction({ bookingId: priceTarget.id, priceCents: cents });
+      if (!r.ok) {
+        toast({ title: 'Errore', description: r.error, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Prezzo aggiornato', description: formatEUR(r.data.priceCents) });
+      setPriceTarget(null);
+    });
+  }
 
   const localTimes = useMemo(() => {
     const m = new Map<string, string>();
@@ -115,6 +149,17 @@ export function StaffTodayView({ bookings }: { bookings: Row[] }) {
               </div>
 
               <div className="grid grid-cols-2 gap-1 md:ml-auto md:flex md:flex-shrink-0 md:flex-nowrap md:items-center md:gap-1.5" onClick={stop}>
+                {!isCancelled && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={pending}
+                    onClick={(e) => { e.stopPropagation(); setPriceTarget(b); }}
+                    title="Modifica prezzo finale"
+                  >
+                    💶 Prezzo
+                  </Button>
+                )}
                 {!isDone && !isCancelled && (
                   <Button
                     size="sm"
@@ -160,7 +205,52 @@ export function StaffTodayView({ bookings }: { bookings: Row[] }) {
           </Card>
         );
       })}
-      <BookingDetailDialog booking={selected} onClose={() => setSelected(null)} />
+      <BookingDetailDialog booking={selected} onClose={() => setSelected(null)} isAdmin={isAdmin} />
+
+      <Dialog open={!!priceTarget} onOpenChange={(o) => { if (!o && !pending) setPriceTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Modifica prezzo finale</DialogTitle>
+          </DialogHeader>
+          {priceTarget && (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-semibold">{animalLabel(priceTarget)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {priceTarget.service.name.replace(/ — (Cane|Gatto)$/, '')}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Prezzo originale: <strong>{formatEUR(priceTarget.priceCents)}</strong>
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="price-input">Nuovo prezzo (€)</Label>
+                <Input
+                  id="price-input"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.50"
+                  min="0"
+                  value={priceInput}
+                  onChange={(e) => setPriceInput(e.target.value)}
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Sconto, rincaro o arrotondamento concordato in negozio.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPriceTarget(null)} disabled={pending}>
+              Annulla
+            </Button>
+            <Button onClick={savePrice} disabled={pending}>
+              {pending ? 'Salvo…' : 'Salva prezzo'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

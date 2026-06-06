@@ -72,6 +72,12 @@ export const LoginSchema = z.object({
 
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+export const StaffCreateSchema = z.object({
+  email: z.string().email('Email non valida').max(120),
+  name: z.string().min(2, 'Nome troppo corto').max(80),
+});
+export type StaffCreateInput = z.infer<typeof StaffCreateSchema>;
+
 export const ServiceAdminSchema = z.object({
   name: z.string().min(2).max(100),
   displayName: z.string().max(100).nullable().optional(),
@@ -133,6 +139,17 @@ export const BookingEditSchema = z.object({
     .min(1)
     .refine((s) => !Number.isNaN(Date.parse(s)), 'Data/ora non valida'),
   notes: z.string().max(500).optional().or(z.literal('')),
+  // Optional full-edit fields (back-compat: if omitted, booking keeps current value)
+  customerName: z.string().min(2).max(80).optional(),
+  customerEmail: z.union([z.string().email().max(120), z.literal('')]).optional(),
+  customerPhone: z.string().regex(phoneRegex, 'Telefono non valido').max(30).optional(),
+  dogName: z.string().max(50).optional().or(z.literal('')),
+  animalType: AnimalTypeEnum.optional(),
+  dogBreed: z.string().max(80).optional().or(z.literal('')),
+  sizeOptionId: z.string().min(1).optional().or(z.literal('')),
+  coatChoice: z.enum(['SHORT', 'LONG']).optional(),
+  serviceId: z.string().min(1).optional(),
+  addonServiceIds: z.array(z.string().min(1)).max(20).optional(),
 });
 
 export const OpeningHoursSchema = z.object({

@@ -60,9 +60,11 @@ function formatServiceLabel(b: Booking & { service: Service }): string {
 export function WeekCalendar({
   bookings,
   mobileView = 'list',
+  isAdmin = false,
 }: {
   bookings: Row[];
   mobileView?: 'list' | 'grid';
+  isAdmin?: boolean;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selected, setSelected] = useState<Row | null>(null);
@@ -369,7 +371,7 @@ export function WeekCalendar({
         </div>
       </div>
 
-      <BookingDetailDialog booking={selected} onClose={() => setSelected(null)} />
+      <BookingDetailDialog booking={selected} onClose={() => setSelected(null)} isAdmin={isAdmin} />
 
       {/* Legend — grid view */}
       <div className={`flex-wrap gap-3 text-xs text-muted-foreground ${mobileView === 'grid' ? 'flex' : 'hidden'}`}>

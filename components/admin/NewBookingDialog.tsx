@@ -19,6 +19,10 @@ import { useToast } from '@/hooks/use-toast';
 import { APP_TIMEZONE } from '@/lib/utils';
 import type { BreedEntry, PricesByAnimal, BreedServicePriceEntry } from '@/lib/breeds';
 import { makeCellKey } from '@/lib/breeds';
+import { ClientPicker, type PickerSelection } from '@/components/admin/ClientPicker';
+import { SlotPicker } from '@/components/admin/SlotPicker';
+import { BreedPicker } from '@/components/admin/BreedPicker';
+import type { ClientSummary } from '@/lib/clients';
 
 type CoatChoice = 'SHORT' | 'LONG';
 
@@ -88,18 +92,60 @@ export function NewBookingDialog({
   breeds,
   extras,
   pricesByAnimal,
+  isAdmin = false,
 }: {
   services: Service[];
   breeds: BreedEntry[];
   extras: Extra[];
   pricesByAnimal: PricesByAnimal;
+  // Quando true, mostra il toggle "Escludi servizio base" sul card Base.
+  isAdmin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<string>>(new Set());
   const [selectedExtraIds, setSelectedExtraIds] = useState<Set<string>>(new Set());
+  const [clientTab, setClientTab] = useState<'new' | 'existing'>('new');
+  const [selectedClient, setSelectedClient] = useState<ClientSummary | null>(null);
+  // Override ADMIN-only: rimuovi il servizio "Sempre incluso" in casi eccezionali.
+  const [omitDefaultService, setOmitDefaultService] = useState(false);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
+
+  function applyClientSelection(sel: PickerSelection) {
+    setSelectedClient(sel.client);
+    setDraft((d) => {
+      const next: Draft = {
+        ...d,
+        customerName: sel.client.name,
+        customerPhone: sel.client.phone,
+        customerEmail: sel.client.email ?? '',
+      };
+      if (sel.animal) {
+        next.dogName = sel.animal.dogName;
+        if (sel.animal.dogBreed) next.dogBreed = sel.animal.dogBreed;
+        if (sel.animal.sizeOptionId) next.sizeOptionId = sel.animal.sizeOptionId;
+        if (sel.animal.coatChoice) next.coatChoice = sel.animal.coatChoice;
+      }
+      return next;
+    });
+  }
+
+  function clearClient() {
+    setSelectedClient(null);
+    setDraft((d) => ({
+      ...d,
+      customerName: '',
+      customerPhone: '',
+      customerEmail: '',
+      dogName: '',
+      dogBreed: '',
+      sizeOptionId: '',
+      coatChoice: '',
+    }));
+    setSelectedAddonIds(new Set());
+    setSelectedExtraIds(new Set());
+  }
 
   const filteredBreeds = useMemo(
     () => breeds.filter((b) => b.animalType === draft.animalType),
@@ -150,11 +196,13 @@ export function NewBookingDialog({
   );
 
   const primaryService = useMemo(() => {
+    // ADMIN può escludere manualmente il servizio "Sempre incluso" per casi particolari.
+    if (omitDefaultService) return null;
     if (!primaryCandidate) return null;
     if (!selectedBreed) return primaryCandidate;
     return isServiceActiveForBreed(primaryCandidate, selectedBreed.id) ? primaryCandidate : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryCandidate, selectedBreed, priceMap]);
+  }, [omitDefaultService, primaryCandidate, selectedBreed, priceMap]);
 
   const addonServices = useMemo(() => {
     if (!selectedBreed) return addonCandidates;
@@ -268,8 +316,11 @@ export function NewBookingDialog({
     setDraft(emptyDraft());
     setSelectedAddonIds(new Set());
     setSelectedExtraIds(new Set());
+    setSelectedClient(null);
+    setClientTab('new');
     setWarning(null);
     setSlots([]);
+    setOmitDefaultService(false);
   }
 
   function toggleAddon(id: string) {
@@ -353,6 +404,40 @@ export function NewBookingDialog({
             <DialogTitle>Nuova prenotazione</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Client mode tabs */}
+            <div className="inline-flex w-full rounded-md border bg-muted/30 p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => { setClientTab('new'); }}
+                className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${
+                  clientTab === 'new'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                ➕ Nuovo cliente
+              </button>
+              <button
+                type="button"
+                onClick={() => { setClientTab('existing'); }}
+                className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${
+                  clientTab === 'existing'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                🔍 Cliente esistente
+              </button>
+            </div>
+
+            {clientTab === 'existing' && (
+              <ClientPicker
+                selected={selectedClient}
+                onPick={applyClientSelection}
+                onClear={clearClient}
+              />
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Nome cliente</Label>
@@ -372,6 +457,7 @@ export function NewBookingDialog({
                     setDraft({ ...draft, animalType: e.target.value as 'DOG' | 'CAT', dogBreed: '', sizeOptionId: '', coatChoice: '' });
                     setSelectedAddonIds(new Set());
                     setSelectedExtraIds(new Set());
+                    setOmitDefaultService(false);
                   }}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
@@ -441,7 +527,7 @@ export function NewBookingDialog({
             )}
 
             {/* Services */}
-            {selectedBreed && !sizeRequiredMissing && (primaryService || addonServices.length > 0) && (
+            {selectedBreed && !sizeRequiredMissing && (primaryService || addonServices.length > 0 || (omitDefaultService && primaryCandidate)) && (
               <div className="space-y-2">
                 <Label>Servizi</Label>
 
@@ -458,9 +544,36 @@ export function NewBookingDialog({
                       <span className="text-xs font-semibold uppercase text-primary">Base</span>
                       <span className="flex-1 text-sm font-semibold">{primaryService.displayName || primaryService.name}</span>
                       <span className="text-sm font-medium text-muted-foreground">{p > 0 ? `${p} €` : '—'}</span>
+                      <button
+                        type="button"
+                        onClick={() => setOmitDefaultService(true)}
+                        className="ml-1 rounded p-1 text-muted-foreground transition-colors hover:bg-rose-100 hover:text-rose-700"
+                        title="Escludi il servizio base da questa prenotazione"
+                        aria-label="Escludi servizio base"
+                      >
+                        ✕
+                      </button>
                     </div>
                   );
                 })()}
+
+                {/* Servizio base escluso */}
+                {omitDefaultService && primaryCandidate && (
+                  <div className="flex items-center gap-3 rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">Base</span>
+                    <span className="flex-1 text-sm text-muted-foreground line-through">
+                      {primaryCandidate.displayName || primaryCandidate.name}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-rose-700">escluso</span>
+                    <button
+                      type="button"
+                      onClick={() => setOmitDefaultService(false)}
+                      className="rounded px-2 py-0.5 text-xs font-semibold text-primary hover:bg-primary/10"
+                    >
+                      Ripristina
+                    </button>
+                  </div>
+                )}
 
                 {addonServices.length > 0 && (
                   <div className="space-y-1.5">
@@ -549,94 +662,13 @@ export function NewBookingDialog({
                 <div className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
                   Seleziona razza e servizio per vedere gli orari
                 </div>
-              ) : slotsLoading ? (
-                <p className="text-xs text-muted-foreground">Carico orari…</p>
               ) : (
-                <>
-                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
-                    {slots.filter((s) => s.status !== 'outside').map((s) => {
-                      const isSel = timeOnly === s.time;
-                      const isBusy = s.status === 'busy';
-                      const isClosed = s.status === 'closed';
-                      const capacity = s.capacity ?? 1;
-                      const busyCount = s.busyCount ?? 0;
-                      const showBadge = capacity > 1 && (busyCount > 0 || isBusy);
-                      const cls = isSel
-                        ? 'bg-primary text-primary-foreground border-primary ring-2 ring-primary/30'
-                        : isBusy
-                          ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
-                          : isClosed
-                            ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
-                            : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100';
-                      const title = isBusy
-                        ? `Pieno (${busyCount}/${capacity}): ${s.busyWith ?? ''}`
-                        : isClosed
-                          ? 'Chiuso'
-                          : busyCount > 0
-                            ? `Libero (${busyCount}/${capacity} occupati): ${s.busyWith ?? ''}`
-                            : 'Libero';
-                      return (
-                        <button
-                          key={s.time}
-                          type="button"
-                          title={title}
-                          onClick={() => setDraft({ ...draft, startsAt: `${dateOnly}T${s.time}` })}
-                          className={`relative rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${cls}`}
-                        >
-                          {s.time}
-                          {showBadge && (
-                            <span
-                              className={`absolute -right-1 -top-1 rounded-full px-1 text-[9px] font-bold leading-tight ${
-                                isBusy ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
-                              }`}
-                            >
-                              {busyCount}/{capacity}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-emerald-300" /> libero
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-red-300" /> pieno
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-amber-300" /> chiuso
-                    </span>
-                  </div>
-                  {(() => {
-                    const selected = slots.find((s) => s.time === timeOnly);
-                    if (!selected) return null;
-                    const cap = selected.capacity ?? 1;
-                    const bc = selected.busyCount ?? 0;
-                    if (selected.status === 'busy') {
-                      return (
-                        <div className="mt-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800">
-                          ⚠ Slot pieno ({bc}/{cap}): <strong>{selected.busyWith}</strong>. Sarà richiesta conferma &quot;Forza creazione&quot; al salvataggio.
-                        </div>
-                      );
-                    }
-                    if (selected.status === 'closed') {
-                      return (
-                        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-                          ⚠ Negozio chiuso. Sarà richiesta conferma &quot;Forza creazione&quot; al salvataggio.
-                        </div>
-                      );
-                    }
-                    if (bc > 0 && cap > 1) {
-                      return (
-                        <div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-800">
-                          ✓ Slot disponibile ({bc}/{cap} occupati): <strong>{selected.busyWith}</strong>. Postazione libera ancora prenotabile.
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </>
+                <SlotPicker
+                  slots={slots}
+                  loading={slotsLoading}
+                  selectedTime={timeOnly}
+                  onSelectTime={(time) => setDraft({ ...draft, startsAt: `${dateOnly}T${time}` })}
+                />
               )}
             </div>
 
@@ -684,72 +716,3 @@ export function NewBookingDialog({
   );
 }
 
-function BreedPicker({
-  breeds,
-  value,
-  onChange,
-  animalLabel = 'cane',
-}: {
-  breeds: BreedEntry[];
-  value: string;
-  onChange: (name: string) => void;
-  animalLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const filtered = breeds.filter((b) => b.name.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <div className="space-y-1.5">
-      <Label>Razza ({animalLabel})</Label>
-      <Button
-        type="button"
-        variant="outline"
-        className="h-10 w-full justify-between"
-        onClick={() => { setSearch(''); setOpen(true); }}
-      >
-        <span className={value ? '' : 'text-muted-foreground'}>
-          {value || '— Seleziona —'}
-        </span>
-        <span className="text-muted-foreground">▾</span>
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[80vh] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b p-3 pb-2">
-            <DialogTitle className="text-base">Seleziona razza</DialogTitle>
-            <Input
-              autoFocus
-              placeholder="Cerca…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="mt-2 h-10"
-            />
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">Nessuna razza trovata.</p>
-            ) : (
-              <ul className="divide-y">
-                {filtered.map((b) => (
-                  <li key={b.id}>
-                    <button
-                      type="button"
-                      onClick={() => { onChange(b.name); setOpen(false); }}
-                      className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-accent/40 ${
-                        value === b.name ? 'bg-sage-100 font-semibold' : ''
-                      }`}
-                      style={value === b.name ? { background: 'var(--sage-100)' } : undefined}
-                    >
-                      <span>{b.name}</span>
-                      {value === b.name && <span className="text-sage-800">✓</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
