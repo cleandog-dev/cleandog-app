@@ -175,7 +175,7 @@ export function WeekCalendar({
               key={day.toISOString()}
               className={`rounded-lg border bg-white ${isToday ? 'ring-2 ring-primary' : ''}`}
             >
-              <div className={`flex items-center justify-between px-3 py-2 border-b ${isToday ? 'bg-accent/30' : 'bg-muted/40'}`}>
+              <div className={`flex items-center justify-between px-3 py-2 ${dayBookings.length > 0 ? 'border-b rounded-t-lg' : 'rounded-lg'} ${isToday ? 'bg-accent/30' : 'bg-muted/40'}`}>
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium uppercase text-muted-foreground">
                     {format(day, 'EEE', { locale: it })}

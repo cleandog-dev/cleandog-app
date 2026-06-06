@@ -455,7 +455,7 @@ export function BreedsManager({
         </button>
       )}
 
-      <div className="grid gap-2">
+      <div className="grid grid-cols-1 gap-2">
         {visible.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -469,7 +469,7 @@ export function BreedsManager({
             const preview = missingNames.slice(0, 2).join(', ');
             const more = missingNames.length - 2;
             return (
-            <Card key={b.id}>
+            <Card key={b.id} className="min-w-0">
               <CardContent className="flex items-center justify-between gap-2 py-2.5 sm:py-3">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-sm sm:text-base truncate">{b.name}</h3>
@@ -486,7 +486,7 @@ export function BreedsManager({
                   </div>
                   {missing.length > 0 && (
                     <p
-                      className="mt-1 text-[11px]"
+                      className="mt-1 truncate text-[11px]"
                       style={{ color: '#b45309' }}
                       title={missingNames.join(', ')}
                     >
