@@ -1,7 +1,7 @@
 // CleanDOG Service Worker — install + push notifications.
 // Online-only (no offline caching for now).
 // VERSION: bump this string to force-update SW on existing clients.
-const SW_VERSION = 'v4-2026-05-27';
+const SW_VERSION = 'v5-2026-06-06';
 
 self.addEventListener('install', () => {
   console.log('[sw]', SW_VERSION, 'installing');
