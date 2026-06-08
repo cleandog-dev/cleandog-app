@@ -1,0 +1,527 @@
+/* Listino prezzi — CleanDOG
+   Coerente con i token brand (sage + brown + cream) di globals.css.
+   Mobile-first, responsive 1 → 2 → 3 colonne. */
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 80px;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  color: var(--ink-900);
+}
+
+/* ── Brand header ────────────────────────────────────────────── */
+.brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+/* Wordmark tipografico grosso "CleanDOG": Clean sage + DOG oro.
+   Riusa stessi token colore + font del Logo nella nav (sage-800 / brown-700)
+   ma a dimensioni da copertina listino. */
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-dm-sans), sans-serif;
+  font-weight: 800;
+  font-size: clamp(44px, 11vw, 72px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.wordmarkClean {
+  color: var(--sage-800);
+}
+.wordmarkDog {
+  color: var(--brown-700);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Tagline sotto il wordmark — stesso pattern di `.eyebrow` ma centrato + ink scuro. */
+.tagline {
+  font-family: var(--font-dm-sans), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin: 0;
+}
+
+/* Linea oro sottile come divisore tra tagline e titolo. */
+.rule {
+  display: block;
+  width: 44px;
+  height: 1px;
+  background: var(--brown-500);
+  margin: 16px auto 14px;
+}
+
+/* Overrides locali sopra il `.display` globale per la dimensione e il colore listino. */
+.title {
+  font-size: clamp(32px, 7vw, 46px);
+  color: var(--sage-900);
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+/* ── Banda "Sempre compreso" ─────────────────────────────────── */
+/* Layout inline: etichetta + voci tutto sulla stessa riga (con wrap a riga
+   nuova se mobile/spazio insufficiente). Colori invariati. */
+.included {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 28px;
+  background: var(--sage-100);
+  border-radius: 18px;
+  padding: 14px 22px;
+  margin: 0 0 28px;
+}
+.includedTitle {
+  margin: 0;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brown-700);
+}
+.includedList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 28px;
+}
+.includedList li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sage-900);
+}
+.includedList svg {
+  color: var(--sage-800);
+  flex-shrink: 0;
+}
+
+/* ── Sticky controls (search + chips + count) ────────────────── */
+.controls {
+  position: sticky;
+  top: 56px; /* sotto la top bar sticky */
+  z-index: 30;
+  margin: 0 -20px 24px;
+  padding: 12px 20px;
+  background: rgba(245, 237, 224, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--cream-300);
+}
+.controlsInner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.searchbar {
+  position: relative;
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  background: var(--cream-50);
+  border: 1px solid var(--cream-300);
+  border-radius: 999px;
+  height: 44px;
+  padding: 0 12px 0 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.searchbar:focus-within {
+  border-color: var(--brown-500);
+  box-shadow: 0 0 0 3px rgba(166, 136, 106, 0.18);
+}
+.searchicon {
+  color: var(--ink-500);
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.searchbar input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink-900);
+  min-width: 0;
+}
+.searchbar input::placeholder {
+  color: var(--ink-300);
+}
+.clear {
+  background: transparent;
+  border: none;
+  color: var(--ink-500);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+.clear:hover {
+  background: var(--cream-200);
+  color: var(--ink-900);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-500);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.chip:hover {
+  background: var(--cream-50);
+}
+.chipOn {
+  background: var(--sage-100);
+  color: var(--sage-900);
+}
+.count {
+  font-size: 13px;
+  color: var(--ink-500);
+  margin-left: auto;
+}
+
+/* ── Griglia listino ──────────────────────────────────────────── */
+.listino {
+  min-height: 200px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 28px 44px;
+  align-items: start;
+}
+.section {
+  min-width: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1.5px solid var(--sage-800);
+  margin-bottom: 8px;
+}
+.sectionTitle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.sectionTitle h2 {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: 0.01em;
+  color: var(--sage-900);
+  margin: 0;
+  white-space: nowrap;
+}
+.sizedot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+.sizedotRing {
+  display: inline-block;
+  border: 1.5px solid var(--brown-700);
+  border-radius: 50%;
+}
+.sectionMeta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sectionRange {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--brown-700);
+  font-variant-numeric: tabular-nums;
+}
+.sectionCount {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--cream-300);
+}
+.row:last-child {
+  border-bottom: none;
+}
+.rowName {
+  flex: 1 1 auto;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-900);
+  min-width: 0;
+  word-break: break-word;
+}
+.rowPrice {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--sage-800);
+  font-variant-numeric: tabular-nums;
+}
+.mark {
+  background: rgba(166, 136, 106, 0.24);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* ── Stato vuoto ──────────────────────────────────────────────── */
+.empty {
+  text-align: center;
+  padding: 48px 16px;
+}
+.emptyTitle {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 28px;
+  color: var(--sage-900);
+  margin: 0 0 10px;
+}
+.emptySub {
+  font-size: 14px;
+  color: var(--ink-500);
+  margin: 0 0 24px;
+  max-width: 380px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.emptyReset {
+  background: var(--sage-800);
+  color: var(--cream-50);
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.emptyReset:hover {
+  transform: scale(1.02);
+}
+
+/* ── Sezione Gatti ────────────────────────────────────────────── */
+.cats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 1.5px solid var(--sage-800);
+  padding-top: 28px;
+  margin-top: 48px;
+}
+.catsLeft {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.catsEyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brown-700);
+  margin: 0 0 6px;
+}
+.catsTitle {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: 30px;
+  color: var(--sage-900);
+  margin: 0 0 6px;
+}
+.catsNote {
+  font-size: 14px;
+  color: var(--ink-500);
+  margin: 0;
+  max-width: 360px;
+}
+.catsPrice {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.catsNum {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(38px, 10vw, 52px);
+  line-height: 1;
+  color: var(--sage-900);
+  font-variant-numeric: tabular-nums;
+}
+.catsCur {
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--brown-700);
+}
+
+/* ── CTA conversione ──────────────────────────────────────────── */
+.cta {
+  margin: 56px 0 32px;
+  padding: 36px 24px;
+  background: var(--sage-900);
+  border-radius: var(--r-lg);
+  text-align: center;
+  color: var(--cream-50);
+}
+/* Override locale sopra `.display` globale: dimensione + colore CTA scura. */
+.ctaTitle {
+  font-size: clamp(26px, 6vw, 34px);
+  color: var(--cream-50);
+  margin: 0 0 8px;
+}
+.ctaText {
+  font-size: 15px;
+  color: rgba(251, 247, 239, 0.78);
+  margin: 0 auto 22px;
+  max-width: 460px;
+  line-height: 1.5;
+}
+/* Riusa `.btn-primary` globale, qui aggiungo solo il colore "oro" specifico
+   per spiccare sul fondo sage scuro. */
+.ctaButton {
+  background: var(--brown-700) !important;
+}
+.ctaButton:hover {
+  background: var(--brown-500) !important;
+}
+.ctaPhone {
+  display: block;
+  margin-top: 14px;
+  font-size: 14px;
+  color: rgba(251, 247, 239, 0.72);
+  text-decoration: underline;
+  text-decoration-color: rgba(251, 247, 239, 0.3);
+  text-underline-offset: 4px;
+}
+.ctaPhone:hover {
+  color: var(--cream-50);
+}
+
+/* ── Disclaimer prezzi ────────────────────────────────────────── */
+.disclaimer {
+  margin: 0 0 28px;
+  padding: 16px 20px;
+  background: var(--cream-50);
+  border: 1px solid var(--cream-300);
+  border-radius: var(--r-md);
+}
+.disclaimer p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-500);
+}
+.disclaimer strong {
+  color: var(--ink-700);
+  font-weight: 700;
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.foot {
+  text-align: center;
+  padding-top: 24px;
+}
+.footLine {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-500);
+  margin: 0;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .page {
+    padding: 22px 14px 60px;
+  }
+  .controls {
+    margin: 0 -14px 20px;
+    padding: 10px 14px;
+  }
+  .controlsInner {
+    gap: 8px;
+  }
+  .searchbar {
+    flex: 1 1 100%;
+    height: 42px;
+  }
+  .chips {
+    flex: 1 1 auto;
+  }
+  .count {
+    flex-basis: 100%;
+    margin-left: 0;
+    text-align: right;
+  }
+  .included {
+    padding: 14px 16px;
+  }
+  .includedList {
+    gap: 10px 18px;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .cats {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .cta {
+    padding: 28px 18px;
+    margin: 40px 0 24px;
+  }
+}

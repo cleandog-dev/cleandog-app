@@ -210,10 +210,8 @@ export default async function HomePage() {
               </svg>
               Prenota appuntamento
             </Link>
-            <a
-              href="/volantino-prezzi.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/listino"
               className="btn-ghost text-sm"
               style={{ color: 'var(--ink-500)' }}
             >
@@ -223,10 +221,7 @@ export default async function HomePage() {
                 <path d="M16 24h12M16 30h8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
               </svg>
               Listino prezzi
-            </a>
-            <a href="tel:0903354798" className="btn-ghost text-sm" style={{ color: 'var(--ink-500)' }}>
-              📞 090 335 4798
-            </a>
+            </Link>
           </div>
 
           {/* Trust row */}
@@ -292,7 +287,7 @@ export default async function HomePage() {
               <div className="space-y-3 text-sm" style={{ color: 'var(--ink-700)' }}>
                 <div className="flex items-start gap-3">
                   <span>📍</span>
-                  <p>Messina — <span style={{ color: 'var(--ink-500)' }}>contattaci per l'indirizzo esatto</span></p>
+                  <p>Messina — <span style={{ color: 'var(--ink-500)' }}>Via Ghibellina, 35 - Messina 98122</span></p>
                 </div>
                 <div className="flex items-start gap-3">
                   <span>🕐</span>
@@ -320,7 +315,7 @@ export default async function HomePage() {
 
       <footer className="border-t px-5 py-6 text-center text-xs" style={{ borderColor: 'var(--cream-300)', color: 'var(--ink-300)' }}>
         <p style={{ letterSpacing: '0.12em', textTransform: 'uppercase', fontSize: 10 }}>
-          CleanDOG · Messina · Lunedì – Sabato
+          CleanDOG · Messina · Martedì – Sabato
         </p>
         <p className="mt-2">
           <Link href="/privacy" className="underline">Privacy</Link>
