@@ -9,13 +9,41 @@ import { auth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-async function authorize(req: Request): Promise<{ ok: true } | { ok: false; res: Response }> {
+// Business-hours guard: reminders only matter for bookings during opening hours.
+// Window is +50/+70min, earliest useful run ~07:00, latest ~21:00 Europe/Rome.
+// Returning early here avoids waking Neon compute (no prisma call) outside this window,
+// so the DB scales to zero overnight even if the external cron keeps firing.
+function romeHourMinute(): { hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('it-IT', {
+    timeZone: 'Europe/Rome',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return { hour, minute };
+}
+
+// True only for one 5-min cron tick per quarter-hour (:00 :15 :30 :45 buckets),
+// so a 5-min external cron still hits the DB just ~4x/hour. Reminder window is
+// 20min wide (+50/+70), so a 15-min cadence never misses a booking.
+function shouldRun(): { run: boolean; reason?: string } {
+  const { hour, minute } = romeHourMinute();
+  if (hour < 7 || hour >= 21) return { run: false, reason: 'outside-business-hours' };
+  if (minute % 15 >= 5) return { run: false, reason: 'throttled-quarter-hour' };
+  return { run: true };
+}
+
+async function authorize(
+  req: Request,
+): Promise<{ ok: true; via: 'cron' | 'admin' } | { ok: false; res: Response }> {
   const expected = process.env.CRON_SECRET;
   const auth1 = req.headers.get('authorization');
-  if (expected && auth1 === `Bearer ${expected}`) return { ok: true };
+  if (expected && auth1 === `Bearer ${expected}`) return { ok: true, via: 'cron' };
   // Allow admin session as fallback (manual trigger from UI)
   const session = await auth();
-  if (session?.user) return { ok: true };
+  if (session?.user) return { ok: true, via: 'admin' };
   return { ok: false, res: NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }) };
 }
 
@@ -67,6 +95,14 @@ async function runReminders() {
 export async function GET(req: Request) {
   const a = await authorize(req);
   if (!a.ok) return a.res;
+  // Skip before touching the DB so Neon stays suspended (scale-to-zero) when no work is due.
+  // Admin manual triggers always run (for testing); only the external cron is throttled.
+  if (a.via === 'cron') {
+    const gate = shouldRun();
+    if (!gate.run) {
+      return NextResponse.json({ ok: true, skipped: gate.reason });
+    }
+  }
   const result = await runReminders();
   return NextResponse.json({ ok: true, ...result });
 }

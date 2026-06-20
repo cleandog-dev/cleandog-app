@@ -65,9 +65,6 @@ export default async function AdminStaffPage() {
 
       <div>
         <h1 className="text-xl font-bold sm:text-2xl">Personale</h1>
-        <p className="text-[11px] text-muted-foreground sm:text-sm">
-          Aggiornamento automatico ogni 3 min
-        </p>
       </div>
 
       <div

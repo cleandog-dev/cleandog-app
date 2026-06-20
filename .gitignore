@@ -29,6 +29,9 @@ next-env.d.ts
 prisma/*.db
 prisma/*.db-journal
 
+# DB snapshots — contain customer PII, never commit
+backup/
+
 .turbo
 coverage/
 .vercel
