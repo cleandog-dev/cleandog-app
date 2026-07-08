@@ -234,7 +234,9 @@ function statsInRangeStrict(bookings: DashBooking[], start: Date, end: Date): Pe
 }
 
 function pctDelta(curr: number, prev: number): number | null {
-  if (prev === 0) return curr > 0 ? 100 : null;
+  // No prior baseline → a percentage is meaningless (it's "new", not "+100%").
+  // Return null so the UI hides the delta badge and just shows "vs 0".
+  if (prev === 0) return null;
   return Math.round(((curr - prev) / prev) * 100);
 }
 
