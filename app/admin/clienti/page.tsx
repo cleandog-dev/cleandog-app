@@ -9,7 +9,8 @@ export const metadata = { title: 'Clienti' };
 
 export default async function AdminClientiPage() {
   const session = await auth();
-  if (session?.user?.role !== 'ADMIN') redirect('/admin/staff');
+  const role = session?.user?.role;
+  if (role !== 'ADMIN' && role !== 'STAFF') redirect('/login');
   const rows = await prisma.booking.findMany({
     select: {
       customerName: true,

@@ -11,7 +11,8 @@ export default async function AdminClienteDetailPage(
   props: { params: Promise<{ phoneKey: string }> },
 ) {
   const session = await auth();
-  if (session?.user?.role !== 'ADMIN') redirect('/admin/staff');
+  const role = session?.user?.role;
+  if (role !== 'ADMIN' && role !== 'STAFF') redirect('/login');
   const { phoneKey: raw } = await props.params;
   const phoneKey = normalizePhone(decodeURIComponent(raw));
   if (!phoneKey) notFound();

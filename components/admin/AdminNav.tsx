@@ -14,7 +14,7 @@ export const NAV_ITEMS: Array<[string, string]> = [
 
 // Voci accessibili allo STAFF. Deny-by-default: qualunque cosa fuori da
 // questo set è ADMIN-only. Se `role` è undefined/strano, si comporta come STAFF.
-const STAFF_ALLOWED = new Set(['/admin/prenotazioni', '/admin/staff']);
+const STAFF_ALLOWED = new Set(['/admin/prenotazioni', '/admin/staff', '/admin/clienti']);
 
 function navItemsForRole(role: 'ADMIN' | 'STAFF' | undefined): Array<[string, string]> {
   if (role === 'ADMIN') return NAV_ITEMS;
