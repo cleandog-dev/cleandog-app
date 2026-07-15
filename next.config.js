@@ -18,6 +18,8 @@ const nextConfig = {
       {
         source: '/:path*',
         headers: [
+          // HSTS: applicato dai browser solo su HTTPS (prod); innocuo in dev http.
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

@@ -36,13 +36,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
       <main className="mx-auto max-w-screen-lg px-3 py-4 sm:px-5 sm:py-8">
-        {/* Push notifications: solo ADMIN. STAFF non riceve i push admin
-            per evitare device "fantasma" non associabili al titolare. */}
-        {role === 'ADMIN' && (
-          <div className="mb-4">
-            <PushSubscribe scope="ADMIN" />
-          </div>
-        )}
+        {/* Push notifications: ADMIN + STAFF ricevono le stesse notifiche
+            sugli appuntamenti. All'eliminazione di un account staff le sue
+            subscription vengono rimosse (deleteStaffUserAction) e pushToAdmins
+            scarta comunque le subscription con userId orfano. */}
+        <div className="mb-4">
+          <PushSubscribe scope="ADMIN" />
+        </div>
         {children}
       </main>
     </div>

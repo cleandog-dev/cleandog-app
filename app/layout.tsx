@@ -54,12 +54,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 window.addEventListener('beforeinstallprompt', function(e){
                   e.preventDefault();
                   window.__cleandogBIP = e;
-                  console.log('[pwa] beforeinstallprompt captured');
                   window.dispatchEvent(new CustomEvent('cleandog-bip-ready'));
                 });
                 window.addEventListener('appinstalled', function(){
                   window.__cleandogBIP = null;
-                  console.log('[pwa] appinstalled');
                 });
               })();
             `,

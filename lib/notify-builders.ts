@@ -49,6 +49,22 @@ export function buildBookingConfirmedClientPayload(b: BookingLike, serviceName: 
   };
 }
 
+export function buildBookingEditedAdminPayload(
+  b: BookingLike,
+  serviceName: string,
+  changes: string[],
+): PushPayload {
+  const animal = animalLabel(b);
+  const changesLine = changes.length ? ` · Modifiche: ${changes.join(', ')}` : '';
+  return {
+    title: '✏️ Prenotazione modificata',
+    body: `${animal} · ${cleanServiceName(serviceName)} · ${fmtWhen(b.startsAt)} · ${b.customerName}${changesLine}`,
+    url: '/admin/prenotazioni',
+    tag: `booking-edit-${b.id}`,
+    requireInteraction: true,
+  };
+}
+
 export function buildBookingCancelledAdminPayload(b: BookingLike, serviceName: string): PushPayload {
   const animal = animalLabel(b);
   return {

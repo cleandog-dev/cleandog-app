@@ -7,9 +7,18 @@ import { APP_TIMEZONE } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
+// Neutralizza formula injection (Excel/Sheets eseguono celle che iniziano
+// con = + - @): prefissa con apostrofo, poi quota per il CSV.
+function csvCell(v: unknown): string {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 export async function GET(req: Request) {
+  // Solo ADMIN: l'export contiene l'intera anagrafica clienti (PII).
   const session = await auth();
-  if (!session?.user) {
+  if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -69,7 +78,7 @@ export async function GET(req: Request) {
   });
 
   const csv = [headers, ...rows]
-    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map(csvCell).join(','))
     .join('\n');
 
   return new NextResponse('\uFEFF' + csv, {

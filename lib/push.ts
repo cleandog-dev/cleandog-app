@@ -103,7 +103,25 @@ export async function pushToAdmins(
   ensureConfigured();
   if (!configured) return { sent: 0, failed: 0, skipped: 1 };
 
-  const subs = await prisma.pushSubscription.findMany({ where: { scope: 'ADMIN' } });
+  const allSubs = await prisma.pushSubscription.findMany({ where: { scope: 'ADMIN' } });
+
+  // Difesa: scarta (ed elimina) subscription il cui utente non esiste più
+  // (es. account STAFF eliminato prima che deleteStaffUserAction pulisse le sue).
+  // userId null = subscription legacy pre-RBAC: mantenuta per back-compat.
+  const linkedIds = Array.from(new Set(allSubs.map((s) => s.userId).filter((x): x is string => !!x)));
+  const aliveIds = linkedIds.length
+    ? new Set(
+        (await prisma.user.findMany({ where: { id: { in: linkedIds } }, select: { id: true } })).map((u) => u.id),
+      )
+    : new Set<string>();
+  const subs = allSubs.filter((s) => !s.userId || aliveIds.has(s.userId));
+  const orphans = allSubs.filter((s) => s.userId && !aliveIds.has(s.userId));
+  if (orphans.length) {
+    await prisma.pushSubscription
+      .deleteMany({ where: { id: { in: orphans.map((o) => o.id) } } })
+      .catch(() => {});
+  }
+
   if (subs.length === 0) {
     await prisma.notificationLog.create({
       data: { event, scope: 'ADMIN', bookingId: bookingId ?? null, status: 'SKIPPED', error: 'no_subscriptions', payload: JSON.stringify(payload) },

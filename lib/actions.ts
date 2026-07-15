@@ -23,7 +23,8 @@ import { rateLimit } from '@/lib/rate-limit';
 import { sendBookingConfirmation } from '@/lib/email';
 import { auth } from '@/lib/auth';
 import { findBreedByName, getBreedWithServicePrices, getAllBreedsAdmin, getPricesMapForAnimal, type BreedServicePriceRow, type BreedSizeOptionDTO } from '@/lib/breeds-server';
-import { parseExtraNamesFromNotes } from '@/lib/utils';
+import { toZonedTime } from 'date-fns-tz';
+import { APP_TIMEZONE, parseExtraNamesFromNotes } from '@/lib/utils';
 import { getSlotStepMin, getMaxConcurrentBookings } from '@/lib/settings';
 import { pushToAdmins, pushToClientPhone } from '@/lib/push';
 import {
@@ -31,6 +32,7 @@ import {
   buildBookingConfirmedClientPayload,
   buildBookingCancelledAdminPayload,
   buildBookingCancelledClientPayload,
+  buildBookingEditedAdminPayload,
   buildBookingRescheduledClientPayload,
   buildBookingStatusAdminPayload,
 } from '@/lib/notify-builders';
@@ -90,6 +92,21 @@ export async function createBookingAction(
     return { ok: false, error: 'Orario non valido' };
   }
   const endsAt = new Date(startsAt.getTime() + totalDuration * 60_000);
+
+  // Orari di apertura: l'UI mostra solo slot validi, ma un POST diretto a
+  // /api/book può inviare qualsiasi orario — il server rivalida sempre.
+  // Stessa semantica di getAvailableSlots: inizio ≥ apertura, fine ≤ chiusura.
+  const localStart = toZonedTime(startsAt, APP_TIMEZONE);
+  const startMinute = localStart.getHours() * 60 + localStart.getMinutes();
+  const dayOpenings = await prisma.openingHour.findMany({
+    where: { dayOfWeek: localStart.getDay(), active: true },
+  });
+  const insideOpening = dayOpenings.some(
+    (o) => startMinute >= o.openMinute && startMinute + totalDuration <= o.closeMinute,
+  );
+  if (!insideOpening) {
+    return { ok: false, error: 'Orario fuori dagli orari di apertura. Scegli un altro slot.' };
+  }
 
   try {
     const booking = await prisma.$transaction(async (tx) => {
@@ -170,16 +187,19 @@ export async function createBookingAction(
 
     revalidatePath('/admin/dashboard');
 
-    // Fire-and-forget email (only if customer provided email)
+    // Email di conferma: dentro after() — su Vercel il fire-and-forget nudo
+    // può essere ucciso quando la response parte prima che Resend risponda.
     if (booking.customerEmail) {
-      sendBookingConfirmation({
-        to: booking.customerEmail,
-        customerName: booking.customerName,
-        dogName: booking.dogName,
-        serviceName: service.name,
-        startsAt: booking.startsAt,
-        priceCents: booking.priceCents,
-      }).catch((e) => console.error('Email send failed:', e));
+      after(() =>
+        sendBookingConfirmation({
+          to: booking.customerEmail,
+          customerName: booking.customerName,
+          dogName: booking.dogName,
+          serviceName: service.name,
+          startsAt: booking.startsAt,
+          priceCents: booking.priceCents,
+        }).catch((e) => console.error('Email send failed:', e)),
+      );
     }
 
     // Push notification → admin (new booking)
@@ -398,11 +418,20 @@ export async function updateBookingStatusAction(
   const parsed = BookingStatusUpdateSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: 'Input non valido' };
 
-  const updated = await prisma.booking.update({
-    where: { id: parsed.data.bookingId },
-    data: { status: parsed.data.status },
-    include: { service: true },
-  });
+  let updated;
+  try {
+    updated = await prisma.booking.update({
+      where: { id: parsed.data.bookingId },
+      data: { status: parsed.data.status },
+      include: { service: true },
+    });
+  } catch (e) {
+    // P2025 = record inesistente (già eliminato da un'altra tab/utente)
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return { ok: false, error: 'Prenotazione non trovata (forse già eliminata)' };
+    }
+    throw e;
+  }
   revalidatePath('/admin/dashboard');
 
   // Notify admin on every status change
@@ -453,18 +482,15 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
     : ((booking.coatChoice === 'SHORT' || booking.coatChoice === 'LONG') ? booking.coatChoice : null);
 
   // Resolve addons. If client passed addonServiceIds, use them; else parse existing snapshot.
-  let addonIds: string[];
-  if (input.addonServiceIds !== undefined) {
-    addonIds = input.addonServiceIds;
-  } else {
-    addonIds = [];
-    if (booking.addonItemsJson) {
-      try {
-        const arr = JSON.parse(booking.addonItemsJson) as Array<{ serviceId?: string }>;
-        addonIds = arr.map((x) => x.serviceId).filter((x): x is string => !!x);
-      } catch {}
-    }
+  let existingAddonIds: string[] = [];
+  if (booking.addonItemsJson) {
+    try {
+      const arr = JSON.parse(booking.addonItemsJson) as Array<{ serviceId?: string }>;
+      existingAddonIds = arr.map((x) => x.serviceId).filter((x): x is string => !!x);
+    } catch {}
   }
+  const addonIds: string[] =
+    input.addonServiceIds !== undefined ? input.addonServiceIds : existingAddonIds;
 
   // Load updated service (if changed) to get fresh defaults for duration/price.
   const effService = effectiveServiceId === booking.serviceId
@@ -584,6 +610,52 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
   revalidatePath('/admin/clienti');
   revalidatePath('/admin/dashboard');
 
+  // Diff dei campi modificati (etichette leggibili per la notifica admin).
+  // `relevant` = modifica operativa (calendario/durata/prezzo) → merita un push.
+  // Modifiche solo anagrafiche (nomi, contatti, note) non notificano, ma se
+  // salvate insieme a una modifica operativa compaiono comunque nell'elenco.
+  const changes: string[] = [];
+  let pushWorthy = false;
+  const addChange = (label: string, relevant: boolean) => {
+    changes.push(label);
+    if (relevant) pushWorthy = true;
+  };
+  if (startsAt.getTime() !== booking.startsAt.getTime()) addChange('data/ora', true);
+  if (input.serviceId !== undefined && input.serviceId !== booking.serviceId) addChange('servizio', true);
+  if (input.addonServiceIds !== undefined) {
+    const prev = [...existingAddonIds].sort().join(',');
+    const next = [...input.addonServiceIds].sort().join(',');
+    if (prev !== next) addChange('servizi aggiuntivi', true);
+  }
+  if (input.dogBreed !== undefined && (input.dogBreed || null) !== booking.dogBreed) addChange('razza', true);
+  if (input.sizeOptionId !== undefined && (effectiveSizeOptionId || null) !== booking.sizeOptionId) addChange('taglia', true);
+  if (input.coatChoice !== undefined && (input.coatChoice || null) !== booking.coatChoice) addChange('pelo', true);
+  if (input.customerName !== undefined && input.customerName !== booking.customerName) addChange('nome cliente', false);
+  if (input.customerPhone !== undefined && input.customerPhone !== booking.customerPhone) addChange('telefono', false);
+  if (input.customerEmail !== undefined && input.customerEmail.toLowerCase() !== booking.customerEmail) addChange('email', false);
+  if (input.dogName !== undefined && (input.dogName || '') !== booking.dogName) addChange('nome animale', false);
+  if (input.notes !== undefined && (input.notes || null) !== booking.notes) addChange('note', false);
+
+  // Notify admins only when an operational change happened
+  if (pushWorthy) {
+    const updatedForPush = {
+      ...booking,
+      startsAt,
+      customerName: input.customerName ?? booking.customerName,
+      customerPhone: input.customerPhone ?? booking.customerPhone,
+      dogName: input.dogName !== undefined ? (input.dogName || '') : booking.dogName,
+      dogBreed: effectiveBreed,
+      priceCents: newPriceCents,
+    };
+    after(() =>
+      pushToAdmins(
+        'BOOKING_EDITED',
+        buildBookingEditedAdminPayload(updatedForPush, effService.name, changes),
+        booking.id,
+      ).catch((e) => console.error('Admin push failed:', e)),
+    );
+  }
+
   // Notify client if the time actually changed
   if (booking.customerPhone && startsAt.getTime() !== booking.startsAt.getTime()) {
     const updatedBooking = { ...booking, startsAt };
@@ -608,7 +680,17 @@ export async function deleteBookingAction(bookingId: string): Promise<ActionResu
     where: { id: bookingId },
     include: { service: true },
   });
-  await prisma.booking.delete({ where: { id: bookingId } });
+  if (!booking) return { ok: false, error: 'Prenotazione non trovata (forse già eliminata)' };
+  try {
+    await prisma.booking.delete({ where: { id: bookingId } });
+  } catch (e) {
+    // Race doppia-tab: già eliminata nel frattempo → esito idempotente, niente push doppio.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      revalidatePath('/admin/dashboard');
+      return { ok: true, data: null };
+    }
+    throw e;
+  }
   revalidatePath('/admin/dashboard');
 
   if (booking) {
@@ -1009,7 +1091,14 @@ export async function createClosureAction(raw: unknown): Promise<ActionResult> {
 
 export async function deleteClosureAction(id: string): Promise<ActionResult> {
   await requireAdmin();
-  await prisma.closure.delete({ where: { id } });
+  try {
+    await prisma.closure.delete({ where: { id } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return { ok: false, error: 'Chiusura già eliminata' };
+    }
+    throw e;
+  }
   revalidatePath('/admin/dashboard');
   return { ok: true, data: null };
 }
@@ -1060,7 +1149,14 @@ export async function upsertBreedAction(
 
 export async function deleteBreedAction(id: string): Promise<ActionResult> {
   await requireAdmin();
-  await prisma.breed.delete({ where: { id } });
+  try {
+    await prisma.breed.delete({ where: { id } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return { ok: false, error: 'Razza già eliminata' };
+    }
+    throw e;
+  }
   revalidatePath('/admin/breeds');
   revalidatePath('/prenota');
   return { ok: true, data: null };
@@ -1224,7 +1320,14 @@ export async function upsertExtraAction(
 
 export async function deleteExtraAction(id: string): Promise<ActionResult> {
   await requireAdmin();
-  await prisma.extra.delete({ where: { id } });
+  try {
+    await prisma.extra.delete({ where: { id } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return { ok: false, error: 'Extra già eliminato' };
+    }
+    throw e;
+  }
   revalidatePath('/admin/extras');
   revalidatePath('/prenota');
   return { ok: true, data: null };
@@ -1589,7 +1692,12 @@ export async function deleteStaffUserAction(userId: string): Promise<ActionResul
   if (id === session.user.id) return { ok: false, error: 'Non puoi eliminare te stesso' };
   const target = await prisma.user.findUnique({ where: { id }, select: { role: true } });
   if (!target || target.role !== 'STAFF') return { ok: false, error: 'Account non trovato' };
-  await prisma.user.delete({ where: { id } });
+  await prisma.$transaction([
+    // Le sue subscription push muoiono con l'account: il dispositivo di un ex
+    // dipendente non deve più ricevere notifiche con dati dei clienti.
+    prisma.pushSubscription.deleteMany({ where: { userId: id } }),
+    prisma.user.delete({ where: { id } }),
+  ]);
   revalidatePath('/admin/impostazioni');
   return { ok: true, data: null };
 }

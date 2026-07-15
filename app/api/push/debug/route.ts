@@ -5,8 +5,9 @@ import { auth } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  // Solo ADMIN: espone endpoint subscription e telefoni clienti.
   const session = await auth();
-  if (!session?.user) {
+  if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
