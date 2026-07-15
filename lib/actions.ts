@@ -623,9 +623,16 @@ export async function editBookingAction(raw: unknown): Promise<ActionResult> {
   if (startsAt.getTime() !== booking.startsAt.getTime()) addChange('data/ora', true);
   if (input.serviceId !== undefined && input.serviceId !== booking.serviceId) addChange('servizio', true);
   if (input.addonServiceIds !== undefined) {
-    const prev = [...existingAddonIds].sort().join(',');
-    const next = [...input.addonServiceIds].sort().join(',');
-    if (prev !== next) addChange('servizi aggiuntivi', true);
+    // Confronto per intento utente, non per input grezzo: priceBooking scarta
+    // id non risolvibili, quindi input ≠ snapshot non implica modifica reale.
+    // - aggiunto: id nello snapshot NUOVO (persistito) assente nel vecchio
+    // - rimosso: id nel vecchio snapshot che l'utente non ha rimandato
+    const beforeSet = new Set(existingAddonIds);
+    const afterSet = new Set(pricedEdit.addonItems.map((a) => a.serviceId));
+    const inputSet = new Set(input.addonServiceIds);
+    const added = [...afterSet].some((id) => !beforeSet.has(id));
+    const removedByUser = existingAddonIds.some((id) => !inputSet.has(id));
+    if (added || removedByUser) addChange('servizi aggiuntivi', true);
   }
   if (input.dogBreed !== undefined && (input.dogBreed || null) !== booking.dogBreed) addChange('razza', true);
   if (input.sizeOptionId !== undefined && (effectiveSizeOptionId || null) !== booking.sizeOptionId) addChange('taglia', true);

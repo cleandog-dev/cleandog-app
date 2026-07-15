@@ -254,9 +254,11 @@ export function BookingDetailDialog({
   const hasSizes = breedSizes.length > 0;
   const isMixed = selectedBreedEntry?.coatType === 'MIXED';
 
-  // Auto-pick single size when there's only one
+  // Auto-pick single size when there's only one.
+  // NB: aspetta editData — prima del load selectedBreedEntry è sempre null e
+  // l'effect azzererebbe la taglia della prenotazione (poi salvata → dati persi).
   useEffect(() => {
-    if (mode !== 'edit') return;
+    if (mode !== 'edit' || !editData) return;
     if (!selectedBreedEntry) {
       if (editSizeOptionId) setEditSizeOptionId('');
       return;
